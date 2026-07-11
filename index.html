@@ -2948,7 +2948,7 @@ window.CloudSync = (function(){
   if(!window.firebase || !firebase.initializeApp){ console.warn("Firebase未読込：ローカルのみで動作"); return {_disabled:true}; }
   try{ firebase.initializeApp(cfg); }catch(e){ console.warn(e); return {_disabled:true}; }
   var auth=firebase.auth(), db=firebase.firestore();
-  try{ db.enablePersistence({synchronizeTabs:true}); }catch(e){}
+  try{ db.enablePersistence().catch(function(){}); }catch(e){}
   try{ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
   var mode="login", myUid=null, hid=null, unsub=null, applyingRemote=false, pushTimer=null, inviteCode=null;
   var _origSet = Storage.prototype.setItem;
@@ -2983,7 +2983,27 @@ window.CloudSync = (function(){
         .then(function(){ return db.collection("users").doc(user.uid).set({ householdId:h }); })
         .then(function(){ hid=h; startHousehold(); }); })
       .catch(function(e){ msg(authErr(e)); showSection("Household"); }); }
-  function startHousehold(){ showSection("Loading"); if(unsub){unsub();} unsub=db.collection("households").doc(hid).onSnapshot(function(doc){ if(!doc.exists)return; var d=doc.data(); if(d.inviteCode)inviteCode=d.inviteCode; var data=d.data||{}; if(cloudSig(data)===localSig()){ bootApp(); return; } applyRemote(data); bootApp(); }, function(e){ console.warn("snapshot失敗",e); msg("同期エラー："+(e.message||"")); }); }
+  function startHousehold(){ showSection("Loading"); if(unsub){unsub();}
+    unsub=db.collection("households").doc(hid).onSnapshot(function(doc){
+      if(!doc.exists)return;
+      var d=doc.data(); if(d.inviteCode)inviteCode=d.inviteCode;
+      var data=d.data||{};
+      var cloudVer=(d.updatedAt&&d.updatedAt.toMillis)?d.updatedAt.toMillis():0;
+      var lastVer=Number(localStorage.getItem("_cloudVer")||0);
+      if(cloudSig(data)===localSig()){
+        if(cloudVer) _origSet.call(localStorage,"_cloudVer",String(cloudVer));
+        bootApp(); return;
+      }
+      // 差分あり：クラウドが「前回同期したより新しい」＝相手の更新→取り込む。そうでなければ手元が新しい→消さずに送る。
+      if(cloudVer>lastVer){
+        applyRemote(data);
+        if(cloudVer) _origSet.call(localStorage,"_cloudVer",String(cloudVer));
+        bootApp();
+      } else {
+        schedulePush();  // 手元の未送信データをクラウドへ（上書き消去しない）
+        bootApp();
+      }
+    }, function(e){ console.warn("snapshot失敗",e); msg("同期エラー："+(e.message||"")); }); }
   function genCode(){ var s="ABCDEFGHJKLMNPQRSTUVWXYZ23456789", r=""; for(var i=0;i<6;i++)r+=s[Math.floor(Math.random()*s.length)]; return r; }
   function injectAcctBtn(){ if(el("acctBtn"))return; var bar=document.querySelector(".topbar-inner"); if(!bar)return; bar.style.position="relative"; var b=document.createElement("button"); b.id="acctBtn"; b.type="button"; b.textContent="👤"; b.style.cssText="position:absolute;top:14px;right:16px;width:auto;border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 10px;font-size:15px;line-height:1;cursor:pointer;margin:0"; b.onclick=openAcct; bar.appendChild(b); }
   function openAcct(){ var u=auth.currentUser; el("acctEmail").textContent=u?u.email:""; el("acctCode").textContent=inviteCode||"（世帯を作成した端末で確認）"; show("acctPanel","flex"); }
