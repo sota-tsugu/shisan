@@ -1,9 +1,9 @@
 /* 資産管理アプリ Service Worker
- * 方針：ページ（HTML）はネットワーク優先で取得し、常に最新を表示する。
- *       オフライン時のみキャッシュした最後のHTMLを返す。
- *       これにより、index.html を更新すると次回オンライン起動で自動反映される。
+ * 方針：ページ（HTML）はキャッシュを経由せず毎回サーバーから最新を取得（no-store）。
+ *       取得できたら次回オフライン用にキャッシュも更新。オフライン時のみ最後のHTMLを返す。
+ *       これにより index.html を更新すると、次回オンライン起動でほぼ即座に反映される。
  */
-var CACHE = "shisan-cache-v1";
+var CACHE = "shisan-cache-v2";
 
 self.addEventListener("install", function (e) {
   self.skipWaiting();
@@ -24,10 +24,10 @@ self.addEventListener("activate", function (e) {
 
 self.addEventListener("fetch", function (e) {
   var req = e.request;
-  // ページ遷移（HTML）のみネットワーク優先。その他はブラウザ既定に任せる。
   if (req.mode === "navigate") {
+    // HTMLはキャッシュを使わず常に最新を取得
     e.respondWith(
-      fetch(req).then(function (resp) {
+      fetch(req.url, { cache: "no-store" }).then(function (resp) {
         var copy = resp.clone();
         caches.open(CACHE).then(function (c) { c.put("index.html", copy); });
         return resp;
