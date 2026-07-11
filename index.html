@@ -2935,10 +2935,6 @@
     <div class="lp-note">このコードを配偶者に伝え、相手のログイン後に「招待コードで参加」で入力してもらうと、同じデータを共有できます。</div>
     <button class="btn btn-outline" onclick="CloudSync.logout()">ログアウト</button>
     <button class="btn btn-outline" style="margin-top:8px" onclick="CloudSync.closeAcct()">閉じる</button>
-    <details class="lp-details" style="margin-top:12px"><summary style="font-size:13px">同期の状態（デバッグ）</summary>
-      <pre id="acctDbg" style="white-space:pre-wrap;word-break:break-all;font-size:10px;line-height:1.5;background:var(--fill-soft);border-radius:8px;padding:8px;max-height:240px;overflow:auto;margin:8px 0 0"></pre>
-      <button class="btn btn-outline" style="margin-top:8px" onclick="CloudSync.clearDbg()">ログを消去</button>
-    </details>
   </div>
 </div>
 <script>
@@ -2952,26 +2948,22 @@ window.CloudSync = (function(){
   if(!window.firebase || !firebase.initializeApp){ console.warn("Firebase未読込：ローカルのみで動作"); return {_disabled:true}; }
   try{ firebase.initializeApp(cfg); }catch(e){ console.warn(e); return {_disabled:true}; }
   var auth=firebase.auth(), db=firebase.firestore();
-  try{ db.enablePersistence().then(function(){ dbg("persistence ON"); }).catch(function(e){ dbg("persistence NG:"+(e&&e.code||"")); }); }catch(e){ dbg("persistence 例外"); }
+  try{ db.enablePersistence().catch(function(){}); }catch(e){}
   try{ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
   var mode="login", myUid=null, hid=null, unsub=null, applyingRemote=false, pushTimer=null, inviteCode=null;
   var _origSet = Storage.prototype.setItem;
-  var SYNC_VER = "sync-v3";
-  function dbg(m){ try{ var L=localStorage.getItem("_dbgLog")||""; L=(L+"\n"+new Date().toLocaleTimeString()+" "+m).split("\n").slice(-45).join("\n"); _origSet.call(localStorage,"_dbgLog",L); }catch(e){} }
-  function assetCount(){ try{ return JSON.parse(localStorage.getItem("asset_app")||"[]").length; }catch(e){ return -1; } }
-  dbg("起動 "+SYNC_VER+" / 端末の資産件数="+assetCount());
   try{ localStorage.setItem = function(k,v){ _origSet.call(localStorage,k,v); if(hid && !applyingRemote && SYNC_KEYS.indexOf(k)>=0) schedulePush(); }; }catch(e){}
   function dataMap(){ var m={}; SYNC_KEYS.forEach(function(k){ var v=localStorage.getItem(k); if(v!=null) m[k]=v; }); return m; }
   function localSig(){ return SYNC_KEYS.map(function(k){ return localStorage.getItem(k)||""; }).join(""); }
   function cloudSig(d){ return SYNC_KEYS.map(function(k){ return (d&&d[k]!=null)?d[k]:""; }).join(""); }
   function schedulePush(){ if(pushTimer)clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,400); }
-  function pushNow(){ if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; } if(!hid){ dbg("push中止(hidなし)"); return; } dbg("push開始 資産="+assetCount()); db.collection("households").doc(hid).set({ data:dataMap(), updatedAt:firebase.firestore.FieldValue.serverTimestamp(), updatedBy:myUid }, {merge:true}).then(function(){ dbg("push成功"); }).catch(function(e){ dbg("push失敗:"+(e.code||e.message||"")); console.warn("push失敗",e); }); }
+  function pushNow(){ if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; } if(!hid)return; db.collection("households").doc(hid).set({ data:dataMap(), updatedAt:firebase.firestore.FieldValue.serverTimestamp(), updatedBy:myUid }, {merge:true}).catch(function(e){ console.warn("push失敗",e); }); }
   // アプリを閉じる・バックグラウンドにした瞬間に、未送信の保存を即確定（データ消失防止）
   function flushPush(){ if(pushTimer){ pushNow(); } }
   document.addEventListener("visibilitychange", function(){ if(document.hidden) flushPush(); });
   window.addEventListener("pagehide", flushPush);
   window.addEventListener("beforeunload", flushPush);
-  function applyRemote(d){ dbg("取込(applyRemote) クラウド資産="+((function(){try{return JSON.parse(d&&d.asset_app||"[]").length;}catch(e){return -1;}})())); applyingRemote=true; try{ SYNC_KEYS.forEach(function(k){ if(d&&d[k]!=null) _origSet.call(localStorage,k,d[k]); }); }catch(e){} applyingRemote=false; try{ if(window.__bootMain)window.__bootMain(); if(window.__bootLp)window.__bootLp(); }catch(e){ console.warn("boot失敗",e); } }
+  function applyRemote(d){ applyingRemote=true; try{ SYNC_KEYS.forEach(function(k){ if(d&&d[k]!=null) _origSet.call(localStorage,k,d[k]); }); }catch(e){} applyingRemote=false; try{ if(window.__bootMain)window.__bootMain(); if(window.__bootLp)window.__bootLp(); }catch(e){ console.warn("boot失敗",e); } }
   function bootApp(){ hide("authOverlay"); injectAcctBtn(); }
   function showSection(w){ hide("secLogin"); hide("secHousehold"); hide("secLoading"); show("sec"+w); show("authOverlay"); }
   function toggleMode(){ mode=(mode==="login")?"signup":"login"; el("loginTitle").textContent=mode==="login"?"ログイン":"新規登録"; el("authSubmit").textContent=mode==="login"?"ログイン":"アカウント作成"; el("authToggle").textContent=mode==="login"?"アカウントを新規作成":"ログインに戻る"; el("authPass").setAttribute("autocomplete",mode==="login"?"current-password":"new-password"); msg(""); }
@@ -2998,32 +2990,27 @@ window.CloudSync = (function(){
       var data=d.data||{};
       var cloudVer=(d.updatedAt&&d.updatedAt.toMillis)?d.updatedAt.toMillis():0;
       var lastVer=Number(localStorage.getItem("_cloudVer")||0);
-      var fromCache=doc.metadata&&doc.metadata.fromCache, pending=doc.metadata&&doc.metadata.hasPendingWrites;
-      dbg("snapshot 手元="+assetCount()+" 雲="+((function(){try{return JSON.parse(data.asset_app||"[]").length;}catch(e){return -1;}})())+" 一致="+(cloudSig(data)===localSig())+" cVer="+cloudVer+" lVer="+lastVer+" cache="+fromCache+" pend="+pending);
       if(cloudSig(data)===localSig()){
         if(cloudVer) _origSet.call(localStorage,"_cloudVer",String(cloudVer));
-        dbg("→一致（何もしない）"); bootApp(); return;
+        bootApp(); return;
       }
       // 差分あり：クラウドが「前回同期したより新しい」＝相手の更新→取り込む。そうでなければ手元が新しい→消さずに送る。
       if(cloudVer>lastVer){
-        dbg("→クラウドが新しい→取込");
         applyRemote(data);
         if(cloudVer) _origSet.call(localStorage,"_cloudVer",String(cloudVer));
         bootApp();
       } else {
-        dbg("→手元が新しい→送信(消さない)");
         schedulePush();  // 手元の未送信データをクラウドへ（上書き消去しない）
         bootApp();
       }
     }, function(e){ console.warn("snapshot失敗",e); msg("同期エラー："+(e.message||"")); }); }
   function genCode(){ var s="ABCDEFGHJKLMNPQRSTUVWXYZ23456789", r=""; for(var i=0;i<6;i++)r+=s[Math.floor(Math.random()*s.length)]; return r; }
   function injectAcctBtn(){ if(el("acctBtn"))return; var bar=document.querySelector(".topbar-inner"); if(!bar)return; bar.style.position="relative"; var b=document.createElement("button"); b.id="acctBtn"; b.type="button"; b.textContent="👤"; b.style.cssText="position:absolute;top:14px;right:16px;width:auto;border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 10px;font-size:15px;line-height:1;cursor:pointer;margin:0"; b.onclick=openAcct; bar.appendChild(b); }
-  function openAcct(){ var u=auth.currentUser; el("acctEmail").textContent=u?u.email:""; el("acctCode").textContent=inviteCode||"（世帯を作成した端末で確認）"; var dl=el("acctDbg"); if(dl){ dl.textContent=(SYNC_VER+" hid="+(hid?hid.slice(0,6):"なし")+"\n"+(localStorage.getItem("_dbgLog")||"(記録なし)")); } show("acctPanel","flex"); }
+  function openAcct(){ var u=auth.currentUser; el("acctEmail").textContent=u?u.email:""; el("acctCode").textContent=inviteCode||"（世帯を作成した端末で確認）"; show("acctPanel","flex"); }
   function closeAcct(){ hide("acctPanel"); }
-  function clearDbg(){ try{ _origSet.call(localStorage,"_dbgLog",""); }catch(e){} var dl=el("acctDbg"); if(dl)dl.textContent="(消去)"; }
   showSection("Loading");
-  auth.onAuthStateChanged(function(user){ if(unsub){unsub();unsub=null;} if(!user){ dbg("auth:未ログイン"); myUid=null; hid=null; mode="login"; showSection("Login"); return; } myUid=user.uid; dbg("auth:ログイン中 uid="+user.uid.slice(0,6)); resolveHousehold(user); });
-  return { submitAuth:submitAuth, toggleMode:toggleMode, logout:logout, createHousehold:createHousehold, joinHousehold:joinHousehold, openAcct:openAcct, closeAcct:closeAcct, clearDbg:clearDbg };
+  auth.onAuthStateChanged(function(user){ if(unsub){unsub();unsub=null;} if(!user){ myUid=null; hid=null; mode="login"; showSection("Login"); return; } myUid=user.uid; resolveHousehold(user); });
+  return { submitAuth:submitAuth, toggleMode:toggleMode, logout:logout, createHousehold:createHousehold, joinHousehold:joinHousehold, openAcct:openAcct, closeAcct:closeAcct };
 })();
 </script>
 </body>
