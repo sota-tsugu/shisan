@@ -322,6 +322,7 @@
         </div>
         <div class="yomi" id="amountYomi"></div>
         <button id="addBtn" class="btn btn-primary" onclick="addAsset()">預金・現金 を追加する</button>
+        <button id="cancelEditBtn" class="btn btn-outline" style="display:none;margin-top:8px" onclick="cancelEdit()">編集をキャンセル</button>
       </div>
 
       <div class="card">
@@ -1538,32 +1539,63 @@
 
   // ===== カテゴリ選択 =====
   let selectedCat = "cash";
+  let editingId = null;   // 編集中の資産ID（null=新規追加モード）
   function renderChips() {
     document.getElementById("catChips").innerHTML = CATS.map(c =>
       `<button type="button" class="cat-chip ${c.group==='debt'?'debt':''} ${c.key===selectedCat?'active':''}" onclick="selectCat('${c.key}')"><span class="cm" style="background:${c.color}"></span>${c.label}</button>`
     ).join("");
   }
+  function addBtnLabel() {
+    document.getElementById("addBtn").textContent = CAT_MAP[selectedCat].label + (editingId ? " に更新する" : " を追加する");
+    document.getElementById("cancelEditBtn").style.display = editingId ? "block" : "none";
+  }
   function selectCat(key) {
     selectedCat = key;
     renderChips();
-    document.getElementById("addBtn").textContent = CAT_MAP[key].label + " を追加する";
+    addBtnLabel();
   }
 
-  // ===== 追加・削除 =====
+  // ===== 追加・編集・削除 =====
   function addAsset() {
     const name = document.getElementById("name").value.trim();
     const amount = parseAmt("amount");
     if (!name) { alert("名称を入力してください"); return; }
     if (!amount || amount < 0) { alert("金額を正しく入力してください"); return; }
-    assets.push({ id: Date.now(), cat: selectedCat, name, amount });
+    if (editingId != null) {
+      const a = assets.find(x => x.id === editingId);
+      if (a) { a.cat = selectedCat; a.name = name; a.amount = amount; }
+      editingId = null;
+    } else {
+      assets.push({ id: Date.now(), cat: selectedCat, name, amount });
+    }
     save(); recordCurrentMonth(); checkAchievements(false);
     document.getElementById("name").value = "";
     document.getElementById("amount").value = "";
     document.getElementById("amountYomi").textContent = "";
+    addBtnLabel();
     render();
+  }
+  function editAsset(id) {
+    const a = assets.find(x => x.id === id);
+    if (!a) return;
+    editingId = id;
+    selectedCat = a.cat;
+    document.getElementById("name").value = a.name;
+    document.getElementById("amount").value = a.amount ? Number(a.amount).toLocaleString("ja-JP") : "";
+    document.getElementById("amountYomi").textContent = a.amount ? "＝ " + manYomi(a.amount) : "";
+    renderChips(); addBtnLabel();
+    document.querySelector('.section-title') && document.getElementById("name").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  function cancelEdit() {
+    editingId = null;
+    document.getElementById("name").value = "";
+    document.getElementById("amount").value = "";
+    document.getElementById("amountYomi").textContent = "";
+    addBtnLabel();
   }
   function delAsset(id) {
     if (!confirm("削除しますか？")) return;
+    if (editingId === id) cancelEdit();
     assets = assets.filter(a => a.id !== id);
     save(); recordCurrentMonth(); checkAchievements(true); render();
   }
@@ -1749,7 +1781,7 @@
       const items = assets.filter(a => a.cat === c.key);
       if (!items.length) return "";
       const sub = items.reduce((s,a)=>s+a.amount,0);
-      const rows = items.map(a => `<div class="item ${c.group==='debt'?'debt':''}"><span class="name">${escapeHtml(a.name)}</span><div class="right"><span class="amt num">${yen(a.amount)}</span><button class="del" onclick="delAsset(${a.id})">削除</button></div></div>`).join("");
+      const rows = items.map(a => `<div class="item ${c.group==='debt'?'debt':''}"><span class="name">${escapeHtml(a.name)}</span><div class="right"><span class="amt num">${yen(a.amount)}</span><button class="del" style="color:var(--ink-2)" onclick="editAsset(${a.id})">編集</button><button class="del" onclick="delAsset(${a.id})">削除</button></div></div>`).join("");
       return `<div class="genre-group"><div class="genre-header"><span class="gh-mark" style="background:${c.color}"></span><span class="gh-label">${c.label}</span><span class="gh-count num">${items.length}件</span><span class="gh-sub num">${yen(sub)}</span></div>${rows}</div>`;
     }).join("");
   }
