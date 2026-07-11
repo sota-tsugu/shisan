@@ -2956,8 +2956,13 @@ window.CloudSync = (function(){
   function dataMap(){ var m={}; SYNC_KEYS.forEach(function(k){ var v=localStorage.getItem(k); if(v!=null) m[k]=v; }); return m; }
   function localSig(){ return SYNC_KEYS.map(function(k){ return localStorage.getItem(k)||""; }).join(""); }
   function cloudSig(d){ return SYNC_KEYS.map(function(k){ return (d&&d[k]!=null)?d[k]:""; }).join(""); }
-  function schedulePush(){ if(pushTimer)clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,800); }
-  function pushNow(){ if(!hid)return; db.collection("households").doc(hid).set({ data:dataMap(), updatedAt:firebase.firestore.FieldValue.serverTimestamp(), updatedBy:myUid }, {merge:true}).catch(function(e){ console.warn("push失敗",e); }); }
+  function schedulePush(){ if(pushTimer)clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,400); }
+  function pushNow(){ if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; } if(!hid)return; db.collection("households").doc(hid).set({ data:dataMap(), updatedAt:firebase.firestore.FieldValue.serverTimestamp(), updatedBy:myUid }, {merge:true}).catch(function(e){ console.warn("push失敗",e); }); }
+  // アプリを閉じる・バックグラウンドにした瞬間に、未送信の保存を即確定（データ消失防止）
+  function flushPush(){ if(pushTimer){ pushNow(); } }
+  document.addEventListener("visibilitychange", function(){ if(document.hidden) flushPush(); });
+  window.addEventListener("pagehide", flushPush);
+  window.addEventListener("beforeunload", flushPush);
   function applyRemote(d){ applyingRemote=true; try{ SYNC_KEYS.forEach(function(k){ if(d&&d[k]!=null) _origSet.call(localStorage,k,d[k]); }); }catch(e){} applyingRemote=false; try{ if(window.__bootMain)window.__bootMain(); if(window.__bootLp)window.__bootLp(); }catch(e){ console.warn("boot失敗",e); } }
   function bootApp(){ hide("authOverlay"); injectAcctBtn(); }
   function showSection(w){ hide("secLogin"); hide("secHousehold"); hide("secLoading"); show("sec"+w); show("authOverlay"); }
