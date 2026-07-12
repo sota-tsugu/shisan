@@ -15,6 +15,21 @@
 <meta name="apple-touch-fullscreen" content="yes">
 <!-- Service Worker登録：更新を自動反映（ネットワーク優先） -->
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
+<!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
+<script>
+window.APP_VERSION = "20260712143120";
+window.checkAppUpdate = function(cb){
+  fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
+    var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+    var latest = m ? m[1] : null;
+    if (latest && latest !== window.APP_VERSION) {
+      if (cb) cb("update");
+      if ("serviceWorker" in navigator) { navigator.serviceWorker.getRegistration().then(function(reg){ if(reg) reg.update(); }); }
+      setTimeout(function(){ location.reload(); }, 400);
+    } else { if (cb) cb("latest"); }
+  }).catch(function(){ if (cb) cb("error"); });
+};
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -2933,6 +2948,8 @@
     <div style="font-size:13px;margin-bottom:8px">ログイン中：<b id="acctEmail"></b></div>
     <div style="font-size:13px">招待コード（配偶者に共有）：<b id="acctCode" class="num" style="font-size:18px;letter-spacing:3px"></b></div>
     <div class="lp-note">このコードを配偶者に伝え、相手のログイン後に「招待コードで参加」で入力してもらうと、同じデータを共有できます。</div>
+    <button class="btn btn-outline" style="margin-top:4px" onclick="CloudSync.checkUpdate(this)">更新を確認</button>
+    <div class="lp-note" id="acctVer" style="text-align:center;margin-top:4px"></div>
     <button class="btn btn-outline" onclick="CloudSync.logout()">ログアウト</button>
     <button class="btn btn-outline" style="margin-top:8px" onclick="CloudSync.closeAcct()">閉じる</button>
   </div>
@@ -3006,11 +3023,12 @@ window.CloudSync = (function(){
     }, function(e){ console.warn("snapshot失敗",e); msg("同期エラー："+(e.message||"")); }); }
   function genCode(){ var s="ABCDEFGHJKLMNPQRSTUVWXYZ23456789", r=""; for(var i=0;i<6;i++)r+=s[Math.floor(Math.random()*s.length)]; return r; }
   function injectAcctBtn(){ if(el("acctBtn"))return; var bar=document.querySelector(".topbar-inner"); if(!bar)return; bar.style.position="relative"; var b=document.createElement("button"); b.id="acctBtn"; b.type="button"; b.textContent="👤"; b.style.cssText="position:absolute;top:14px;right:16px;width:auto;border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 10px;font-size:15px;line-height:1;cursor:pointer;margin:0"; b.onclick=openAcct; bar.appendChild(b); }
-  function openAcct(){ var u=auth.currentUser; el("acctEmail").textContent=u?u.email:""; el("acctCode").textContent=inviteCode||"（世帯を作成した端末で確認）"; show("acctPanel","flex"); }
+  function openAcct(){ var u=auth.currentUser; el("acctEmail").textContent=u?u.email:""; el("acctCode").textContent=inviteCode||"（世帯を作成した端末で確認）"; var v=el("acctVer"); if(v)v.textContent="バージョン: "+(window.APP_VERSION||"?"); show("acctPanel","flex"); }
   function closeAcct(){ hide("acctPanel"); }
+  function checkUpdate(btn){ if(!window.checkAppUpdate){ return; } if(btn)btn.textContent="確認中…"; window.checkAppUpdate(function(res){ if(res==="update"){ if(btn)btn.textContent="新しい版に更新します…"; } else if(res==="latest"){ if(btn)btn.textContent="最新版です ✓"; setTimeout(function(){ if(btn)btn.textContent="更新を確認"; },2500); } else { if(btn)btn.textContent="更新を確認"; alert("更新の確認に失敗しました。通信環境をご確認ください。"); } }); }
   showSection("Loading");
   auth.onAuthStateChanged(function(user){ if(unsub){unsub();unsub=null;} if(!user){ myUid=null; hid=null; mode="login"; showSection("Login"); return; } myUid=user.uid; resolveHousehold(user); });
-  return { submitAuth:submitAuth, toggleMode:toggleMode, logout:logout, createHousehold:createHousehold, joinHousehold:joinHousehold, openAcct:openAcct, closeAcct:closeAcct };
+  return { submitAuth:submitAuth, toggleMode:toggleMode, logout:logout, createHousehold:createHousehold, joinHousehold:joinHousehold, openAcct:openAcct, closeAcct:closeAcct, checkUpdate:checkUpdate };
 })();
 </script>
 </body>
