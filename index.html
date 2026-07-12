@@ -17,7 +17,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260712144907";
+window.APP_VERSION = "20260712145528";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -3030,7 +3030,7 @@ window.CloudSync = (function(){
   function injectAcctBtn(){ if(el("acctBtn"))return; var bar=document.querySelector(".topbar-inner"); if(!bar)return; bar.style.position="relative"; var b=document.createElement("button"); b.id="acctBtn"; b.type="button"; b.textContent="👤"; b.style.cssText="position:absolute;top:14px;right:16px;width:auto;border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 10px;font-size:15px;line-height:1;cursor:pointer;margin:0"; b.onclick=openAcct; bar.appendChild(b); }
   function openAcct(){ var u=auth.currentUser; el("acctEmail").textContent=u?u.email:""; el("acctCode").textContent=inviteCode||"（世帯を作成した端末で確認）"; var v=el("acctVer"); if(v)v.textContent="バージョン: "+(window.APP_VERSION||"?"); show("acctPanel","flex"); }
   function closeAcct(){ hide("acctPanel"); }
-  function checkUpdate(btn){ if(!window.checkAppUpdate){ return; } if(btn)btn.textContent="確認中…"; window.checkAppUpdate(function(res){ if(res==="update"){ if(btn)btn.textContent="新しい版に更新します…"; } else if(res==="latest"){ if(btn)btn.textContent="最新版です ✓"; setTimeout(function(){ if(btn)btn.textContent="更新を確認"; },2500); } else { if(btn)btn.textContent="更新を確認"; alert("更新の確認に失敗しました。通信環境をご確認ください。"); } }); }
+  function checkUpdate(btn){ if(!window.checkAppUpdate){ return; } if(btn)btn.textContent="確認中…"; var v=el("acctVer"); window.checkAppUpdate(function(res){ if(res==="update"){ if(btn)btn.textContent="新しい版に更新します…"; if(v)v.textContent="新しい版が見つかりました。更新します…"; } else if(res==="latest"){ if(btn)btn.textContent="最新版です ✓"; if(v)v.textContent="サーバーは最新版です。ファイルをアップロードした直後は、GitHubの反映に1〜2分かかることがあります。少し待ってから、もう一度この「更新を確認」を押してください。（バージョン "+(window.APP_VERSION||"")+"）"; setTimeout(function(){ if(btn)btn.textContent="更新を確認"; },4000); } else { if(btn)btn.textContent="更新を確認"; if(v)v.textContent="更新の確認に失敗しました。通信環境をご確認ください。"; } }); }
   showSection("Loading");
   auth.onAuthStateChanged(function(user){ if(unsub){unsub();unsub=null;} if(!user){ myUid=null; hid=null; mode="login"; showSection("Login"); return; } myUid=user.uid; resolveHousehold(user); });
   return { submitAuth:submitAuth, toggleMode:toggleMode, logout:logout, createHousehold:createHousehold, joinHousehold:joinHousehold, openAcct:openAcct, closeAcct:closeAcct, checkUpdate:checkUpdate };
