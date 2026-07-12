@@ -2501,7 +2501,7 @@
       var pr=r[who];
       if(!pr.reemployment) pr.reemployment={enabled:false,startAge:60,annualIncome:0};
       return '<div class="card"><div class="section-title">'+label+'</div>'
-        + '<div class="lp-row"><div>'+field("完全リタイア年齢（就労終了）", numIR("retirement."+who+".retireAge"))+'</div><div>'+field("職種", selI("retirement."+who+".jobType",[["employee","会社員"],["civil_servant","公務員"],["self_employed","自営業"],["other","その他"]]))+'</div></div>'
+        + '<div class="lp-row" style="align-items:flex-end"><div>'+field("完全リタイア年齢", numIR("retirement."+who+".retireAge"))+'</div><div>'+field("職種", selI("retirement."+who+".jobType",[["employee","会社員"],["civil_servant","公務員"],["self_employed","自営業"],["other","その他"]]))+'</div></div>'
         + '<div class="lp-note" style="margin-top:-6px"><b>すべての就労を終える年齢</b>です。定年後に再雇用で働く場合は、その再雇用も終える年齢を入れます（例：60歳で定年→65歳まで再雇用なら「65」）。</div>'
         + '<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:10px"><input type="checkbox" class="chk" '+(pr.reemployment.enabled?"checked":"")+' onchange="lpToggle(\'retirement.'+who+'.reemployment.enabled\',this.checked)"> 定年後も働く（再雇用・低めの収入で就労継続）</label>'
         + (pr.reemployment.enabled ? (function(){
