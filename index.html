@@ -17,7 +17,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260712145528";
+window.APP_VERSION = "20260713135912";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -948,6 +948,7 @@ window.checkAppUpdate = function(cb){
 
     // 配偶者の死亡以降は収入なし
     if (who === "spouse" && ctx.spouseDeathAge != null && age > ctx.spouseDeathAge) return out;
+    if (who === "self" && ctx.selfDeathAge != null && age > ctx.selfDeathAge) return out;
 
     var retired = age >= pr.retireAge;
 
@@ -1014,13 +1015,18 @@ window.checkAppUpdate = function(cb){
     var deathAgeSelf = ss.deathAgeSelf || DEFAULTS.deathAge;
     var deathAgeSpouse = ss.deathAgeSpouse || DEFAULTS.deathAge;
     var baseYear = opt.baseYear;
-    var endYear = selfBirthY + deathAgeSelf;
+    // 計算期間は「本人・配偶者のうち遅い方の死亡年」まで（世帯として最後に残る方が亡くなるまで）
+    var selfEndY = selfBirthY + deathAgeSelf;
+    var spouseEndY = (spouseBirthY != null) ? (spouseBirthY + deathAgeSpouse) : selfEndY;
+    var endYear = Math.max(selfEndY, spouseEndY);
+    var survivorLevel = (ss.survivorLivingLevel != null ? ss.survivorLivingLevel : 70) / 100; // 死別後、遺された1人分の生活費割合
 
     var childBirthY = {};
     (p.children || []).forEach(function (c) { childBirthY[c.id] = birthYear(c.birthYearMonth); });
     var ctx = {
       baseYear: baseYear, endYear: endYear,
       selfBirthY: selfBirthY, spouseBirthY: spouseBirthY, childBirthY: childBirthY,
+      selfDeathAge: deathAgeSelf,
       spouseDeathAge: spouseBirthY != null ? deathAgeSpouse : null
     };
 
@@ -1066,7 +1072,13 @@ window.checkAppUpdate = function(cb){
         if ((g.annualAmount || 0) > 0 && g.startYear && g.endYear && year >= g.startYear && year <= g.endYear) inhIncome += g.annualAmount;
         (g.special || []).forEach(function (sp) { if (year === sp.year) inhIncome += sp.amount || 0; });
       }
-      var totalIncome = netSalary + pension + benefit + severance + inhIncome + eduSubsidy;
+      // 死亡保険金：本人の死亡翌年、配偶者が存命なら遺された側の資産に加算
+      var lifeInsurance = 0;
+      if (spouseBirthY != null && ageSelf === deathAgeSelf + 1 && ageSpouse != null && ageSpouse <= deathAgeSpouse
+          && inputs.inheritance && inputs.inheritance.bequest) {
+        lifeInsurance = inputs.inheritance.bequest.lifeInsurance || 0;
+      }
+      var totalIncome = netSalary + pension + benefit + severance + inhIncome + eduSubsidy + lifeInsurance;
 
       // --- 支出（生活費：インフレ適用。退職後は生活水準％） ---
       var bothRetired = ageSelf >= ret.self.retireAge && (spouseBirthY == null || !ret.spouse || ageSpouse >= ret.spouse.retireAge);
@@ -1076,6 +1088,12 @@ window.checkAppUpdate = function(cb){
         else livingBase = fin.annualExpense * ((ret.postRetirementLevel || 100) / 100);                                  // 現役時の％
       } else livingBase = fin.annualExpense;
       var living = livingBase * inflMul;
+      // 死別後は遺された1人分に減額（配偶者ありの世帯で、片方だけ存命のとき）
+      var selfAliveNow = ageSelf <= deathAgeSelf;
+      var spouseAliveNow = spouseBirthY != null && ageSpouse != null && ageSpouse <= deathAgeSpouse;
+      if (spouseBirthY != null && ((selfAliveNow ? 1 : 0) + (spouseAliveNow ? 1 : 0)) === 1) {
+        living *= survivorLevel;
+      }
       // 高齢期の生活費逓減：指定年齢以降は活動量が減る想定で生活費を減額（介護費の加算より前に適用）
       if (ret.detail && ret.detail.lateLife && ret.detail.lateLife.enabled && ageSelf >= (ret.detail.lateLife.fromAge || 999)) {
         living *= (1 - (ret.detail.lateLife.reductionPct || 0) / 100);
@@ -1203,10 +1221,13 @@ window.checkAppUpdate = function(cb){
   }
 
   function assetLongevityFromRows(rows) {
-    for (var i = 0; i < rows.length; i++) {
-      if (rows[i].balance < 0) return rows[i].ageSelf;
+    if (!rows.length) return null;
+    if (rows[rows.length - 1].balance >= 0) return null; // 最後まで尽きない
+    // 末尾から遡り、最後に残高>=0だった年の翌年を「恒久的に尽きる時点」とする（一時的なマイナスは無視）
+    for (var i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].balance >= 0) return rows[i + 1] ? rows[i + 1].ageSelf : rows[i].ageSelf;
     }
-    return null; // 生涯尽きない
+    return rows[0].ageSelf; // 最初から負
   }
   function assetLongevity(result) {
     return result && result.summary ? result.summary.longevityAge : null;
@@ -1976,9 +1997,9 @@ window.checkAppUpdate = function(cb){
     const rate = Number(document.getElementById("simRate").value) || 0;
     const years = Math.round(Number(document.getElementById("simYears").value) || 0);
     if (initial <= 0 && monthly <= 0) { box.innerHTML = '<div class="hint" style="margin:14px 0 0">初期投資額か毎月の積立額を入力してください。</div>'; return; }
-    const im = rate/100/12;
+    const im = rate === 0 ? 0 : Math.pow(1 + rate/100, 1/12) - 1;  // 年利どおりに（実効年利＝入力した年利）
     let html = "";
-    // 順算：将来の運用資産額（月複利・月末積立）
+    // 順算：将来の運用資産額（毎月末積立・年利ベースの複利）
     if (years > 0) {
       const nm = years*12;
       const fv = im === 0 ? (initial + monthly*nm) : (initial*Math.pow(1+im,nm) + monthly*((Math.pow(1+im,nm)-1)/im));
@@ -1987,7 +2008,7 @@ window.checkAppUpdate = function(cb){
       html += `<div class="sim-grid" style="margin-top:16px">
         <div><div class="sg-label">${years}年後の運用資産額</div><div class="sg-value num">${yen(fv)}</div></div>
         <div><div class="sg-label">うち運用益</div><div class="sg-value num">${yen(gain)}</div></div></div>
-        <div class="hint" style="margin:8px 0 0">元本合計 ${yen(principal)}（初期 ${yen(initial)} ＋ 積立 ${yen(monthly*nm)}）。月複利・概算。</div>`;
+        <div class="hint" style="margin:8px 0 0">元本合計 ${yen(principal)}（初期 ${yen(initial)} ＋ 積立 ${yen(monthly*nm)}）。毎月末積立・年利どおりの複利で概算。</div>`;
     }
     // 逆算：目標到達（目標が設定されている場合）
     if (goal) {
@@ -2058,7 +2079,7 @@ window.checkAppUpdate = function(cb){
     housing:{ type:"rent", buyYear:nowY+5,
       own:{ loanBalance:0, interestRate:1.0, remainingYears:35, rateType:"fixed", downPayment:0, propertyTaxAnnual:0, managementFeeMonthly:0, repairReserveMonthly:0, majorRepair:{cycleYears:12,amount:2000000} },
       rent:{ monthlyRent:0, renewalIncreaseRate:0 } },
-    simSettings:{ inflationRates:[0,1,2,3], pensionStartAges:[60,65,70,75], deathAgeSelf:100, deathAgeSpouse:100, baseYear:nowY, reflectEduSubsidy:true,
+    simSettings:{ inflationRates:[0,1,2,3], pensionStartAges:[60,65,70,75], deathAgeSelf:100, deathAgeSpouse:100, baseYear:nowY, reflectEduSubsidy:true, survivorLivingLevel:70,
       publicBenefits:{ childbirthLumpSum:{enabled:true}, childAllowance:{enabled:true} } },
     inheritance:{ receive:[], gifting:{ annualAmount:0, startYear:0, endYear:0, special:[] }, bequest:{ lifeInsurance:0 } },
     lifeEvents:[]
@@ -2072,6 +2093,7 @@ window.checkAppUpdate = function(cb){
   if(!lp.lifeEvents) lp.lifeEvents=[];
   if(lp.housing.buyYear==null) lp.housing.buyYear=nowY+5;
   if(lp.simSettings.reflectEduSubsidy==null) lp.simSettings.reflectEduSubsidy=true;
+  if(lp.simSettings.survivorLivingLevel==null) lp.simSettings.survivorLivingLevel=70;
   function mkCare(){ return { enabled:false, costBasis:"outOfPocket", self:{ enabled:true, mode:"home", monthly:53000, years:5, lumpSum:0 }, spouse:{ enabled:false, mode:"home", monthly:53000, years:5, lumpSum:0 } }; }
   if(!lp.retirement.detail) lp.retirement.detail={ medical:{enabled:false,fromAge:75,annualAmount:150000}, care:mkCare(), lateLife:{enabled:false,fromAge:75,reductionPct:10} };
   if(lp.retirement.detail && !lp.retirement.detail.medical) lp.retirement.detail.medical={enabled:false,fromAge:75,annualAmount:150000};
@@ -2582,6 +2604,7 @@ window.checkAppUpdate = function(cb){
       + '<div class="card"><div class="section-title">その他の設定</div>'
       + '<div class="lp-row"><div>'+field("基準年（西暦）", numI("simSettings.baseYear"))+'</div><div>'+field("本人 死亡想定年齢", numI("simSettings.deathAgeSelf"))+'</div></div>'
       + (lp.profile.spouse.exists ? field("配偶者 死亡想定年齢", numI("simSettings.deathAgeSpouse")) : "")
+      + (lp.profile.spouse.exists ? field("死別後の生活費（世帯の何％・遺された1人分）", numI("simSettings.survivorLivingLevel","例：70")) + '<div class="lp-note" style="margin-top:-6px">配偶者と死別した後、遺された1人分の生活費を世帯生活費の何％で見るか（住居費や固定費は残るため半分にはなりにくい。目安70%）。計算は「二人のうち遅い方の寿命」まで行います。</div>' : "")
       + '<div class="lp-note">高校授業料無償化（就学支援金）の反映は「子供」ステップで設定できます。</div>'
       + '<div class="lp-note">年金受給開始年齢の比較パターンは [60, 65, 70, 75] を使用します。</div>'
       + '</div>'
@@ -2733,7 +2756,8 @@ window.checkAppUpdate = function(cb){
     var shortfall=head.summary.finalBalance<0?-head.summary.finalBalance:0;
 
     var headHtml='<div class="card"><div class="section-title">試算結果（退職'+viewOpts.retireAgeSelf+'歳／インフレ'+viewOpts.inflationRate+'%／年金'+viewOpts.pensionStartAge+'歳受給）</div>'
-      +'<div class="total-label">資産寿命</div><div class="total-amount num" style="font-size:34px">'+fmtAge(head.summary.longevityAge)+'</div>'
+      +'<div class="total-label">資産寿命'+(lp.profile.spouse.exists?'（世帯・遅い方の寿命まで）':'')+'</div><div class="total-amount num" style="font-size:34px">'+fmtAge(head.summary.longevityAge)+(head.summary.longevityAge!=null?'<span style="font-size:14px;color:var(--muted);font-weight:400"> （'+(parseInt((lp.profile.self.birthYearMonth||"").slice(0,4))+head.summary.longevityAge)+'年頃）</span>':'')+'</div>'
+      +(lp.profile.spouse.exists?'<div class="lp-note" style="margin-top:2px">配偶者がいるため、<b>配偶者の死亡想定年齢まで</b>計算しています（本人の死亡後は本人の収入が止まり、生活費は遺された1人分に減額、死亡保険金があれば加算）。資産寿命は本人の年齢換算での表示です。</div>':'')
       +'<div class="breakdown"><div><div class="b-label">生涯収入（目安）</div><div class="b-amount num">'+yenU(totalIncome)+'</div><div style="font-size:11px;color:var(--muted)" class="num">平均 '+yen(Math.round(totalIncome/(head.rows.length||1)))+'/年</div></div>'
       +'<div><div class="b-label">生涯支出（目安）</div><div class="b-amount num">'+yenU(totalExpense)+'</div><div style="font-size:11px;color:var(--muted)" class="num">平均 '+yen(Math.round(totalExpense/(head.rows.length||1)))+'/年</div></div></div>'
       +'<div class="net-sub" style="margin-top:14px"><div>最終資産（'+head.summary.endYear+'年）<b class="num">'+yenU(head.summary.finalBalance)+'</b></div>'
