@@ -17,7 +17,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260713135912";
+window.APP_VERSION = "20260714134749";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -2754,6 +2754,7 @@ window.checkAppUpdate = function(cb){
     var eduList=eduPerChild(base, head.summary.endYear);
     var eduTotal=eduList.reduce(function(s,e){return s+e.total;},0);
     var shortfall=head.summary.finalBalance<0?-head.summary.finalBalance:0;
+    var initAssets=(lp.finance.assetBreakdown.cash||0)+(lp.finance.assetBreakdown.securities||0)+(lp.finance.assetBreakdown.realEstate||0)+(lp.finance.assetBreakdown.other||0);
 
     var headHtml='<div class="card"><div class="section-title">試算結果（退職'+viewOpts.retireAgeSelf+'歳／インフレ'+viewOpts.inflationRate+'%／年金'+viewOpts.pensionStartAge+'歳受給）</div>'
       +'<div class="total-label">資産寿命'+(lp.profile.spouse.exists?'（世帯・遅い方の寿命まで）':'')+'</div><div class="total-amount num" style="font-size:34px">'+fmtAge(head.summary.longevityAge)+(head.summary.longevityAge!=null?'<span style="font-size:14px;color:var(--muted);font-weight:400"> （'+(parseInt((lp.profile.self.birthYearMonth||"").slice(0,4))+head.summary.longevityAge)+'年頃）</span>':'')+'</div>'
@@ -2761,7 +2762,9 @@ window.checkAppUpdate = function(cb){
       +'<div class="breakdown"><div><div class="b-label">生涯収入（目安）</div><div class="b-amount num">'+yenU(totalIncome)+'</div><div style="font-size:11px;color:var(--muted)" class="num">平均 '+yen(Math.round(totalIncome/(head.rows.length||1)))+'/年</div></div>'
       +'<div><div class="b-label">生涯支出（目安）</div><div class="b-amount num">'+yenU(totalExpense)+'</div><div style="font-size:11px;color:var(--muted)" class="num">平均 '+yen(Math.round(totalExpense/(head.rows.length||1)))+'/年</div></div></div>'
       +'<div class="net-sub" style="margin-top:14px"><div>最終資産（'+head.summary.endYear+'年）<b class="num">'+yenU(head.summary.finalBalance)+'</b></div>'
-      +(shortfall>0?'<div>生涯の不足額<b class="num debt-v">'+yenU(shortfall)+'</b></div>':'')+'</div></div>';
+      +(shortfall>0?'<div>生涯の不足額<b class="num debt-v">'+yenU(shortfall)+'</b></div>':'')+'</div>'
+      +'<div class="lp-note" style="margin-top:8px">現在資産 <b>'+yenU(initAssets)+'</b> ＋ 生涯収入 '+yenU(totalIncome)+' − 生涯支出 '+yenU(totalExpense)+' ＝ 最終資産 <b>'+yenU(head.summary.finalBalance)+'</b></div>'
+      +'</div>';
 
     var mainChart='<div class="card"><div class="section-title">資産推移</div>'+lpChart(ages,[{label:"資産残高",color:"#18181b",values:head.rows.map(function(r){return r.balance;})}])+'<div class="lp-note">破線はゼロ（資産が尽きるライン）。</div></div>';
 
