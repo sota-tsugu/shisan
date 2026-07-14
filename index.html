@@ -17,7 +17,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260714134749";
+window.APP_VERSION = "20260714140746";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -2866,21 +2866,40 @@ window.checkAppUpdate = function(cb){
       +'<table class="lp-cmp" style="margin-top:8px"><thead><tr><th>ケース</th><th>生涯運用益</th><th>資産寿命</th><th>最終資産</th></tr></thead><tbody>'+retRows+'</tbody></table>'
       +'<div class="lp-note">運用益は「毎年一定の利回りがかかる」前提の単純計算です。実際には相場変動があり下落する年もあり、特に取り崩し期の下落は影響が大きい（シーケンスリスク）ほか、課税（NISA枠外）や手数料も未考慮です。標準は目安、楽観は上振れの上限イメージ、悲観ケースも必ず併せてご確認ください。</div></div>';
 
-    // ===== 4%ルール（取り崩し率）健全性チェック =====
+    // ===== 4%ルール（トリニティ式）取り崩しシミュレーション =====
     var retAge=inp.retirement.self.retireAge||65;
-    var retRow=head.rows.find(function(r){ return r.ageSelf>=retAge && (r.ageSpouse==null || !inp.retirement.spouse || r.ageSpouse>=(inp.retirement.spouse.retireAge||65)); });
+    var retRow=head.rows.find(function(r){ return r.ageSelf>=retAge; });
     var swrHtml="";
     if(retRow && retRow.balance>0){
-      var deficit=Math.max(0, retRow.totalExpense - retRow.totalIncome);
-      var swr=deficit/retRow.balance*100;
-      var deathAge=inp.simSettings.deathAgeSelf||100;
-      var retLen=deathAge-retAge;
-      var thr=retLen>30?3.3:4.0;
-      var ok=swr<=thr;
-      swrHtml='<div class="card"><div class="section-title">取り崩し率チェック（4%ルール）</div>'
-        +'<div class="road-stat"><div><div class="rs-label">退職時の資産</div><div class="rs-value num">'+yenU(retRow.balance)+'</div></div>'
-        +'<div><div class="rs-label">実質の取り崩し率</div><div class="rs-value num" style="color:'+(ok?"var(--up)":"var(--down)")+'">'+swr.toFixed(1)+'%</div></div></div>'
-        +'<div class="lp-note">退職1年目の「年間支出 − 退職後の収入（年金等）＝'+yenLabel(deficit)+'」を、退職時の資産で割った実質の取り崩し率です。目安の<b>'+thr+'%</b>（退職期間'+retLen+'年）'+(ok?'<b style="color:var(--up)">以内で、持続可能ラインの範囲</b>':'<b style="color:var(--down)">を超えており、資産の目減りが早い可能性</b>')+'。<br>4%ルールは米国データに基づく目安で、長寿・低金利の日本ではより保守的（3.3%程度）に見るのが安全です。あくまで参考値です。</div></div>';
+      var retIdx=head.rows.indexOf(retRow);
+      var yearsN=head.rows.length-retIdx;
+      var startAge=retRow.ageSelf;
+      var startA=retRow.balance;
+      var rrPct=(inp.finance.retirementReturnRate!=null?inp.finance.retirementReturnRate:(inp.finance.expectedReturnRate||0));
+      var rr=rrPct/100;
+      var infl=(viewOpts.inflationRate||0)/100;
+      var wd0=startA*0.04;
+      var tAges=[startAge], tVals=[startA], bal=startA, depleteAge=null;
+      for(var k=0;k<yearsN;k++){
+        var ageK=startAge+k+1;
+        var wd=wd0*Math.pow(1+infl,k);
+        bal-=wd;
+        if(bal<=0){ tAges.push(ageK); tVals.push(0); depleteAge=ageK; break; }
+        bal*=(1+rr);
+        tAges.push(ageK); tVals.push(bal);
+      }
+      var endAgeAll=startAge+yearsN;
+      var verdict=(depleteAge!=null)
+        ? '<b style="color:var(--down)">'+depleteAge+'歳ごろ（退職から約'+(depleteAge-startAge)+'年）で尽きます</b>'
+        : '<b style="color:var(--up)">'+endAgeAll+'歳（生涯）まで尽きません</b>';
+      swrHtml='<div class="card"><div class="section-title">4%ルールで取り崩したら（トリニティ式）</div>'
+        +'<div class="road-stat"><div><div class="rs-label">退職時の資産</div><div class="rs-value num">'+yenU(startA)+'</div></div>'
+        +'<div><div class="rs-label">初年度の引き出し（4%）</div><div class="rs-value num">'+yenU(wd0)+'</div></div></div>'
+        +lpChart(tAges,[{label:"資産残高",color:"#18181b",values:tVals}])
+        +'<div class="net-sub" style="margin-top:8px"><div>この方式での資産寿命 '+verdict+'</div></div>'
+        +'<div class="lp-note">退職時資産の<b>4%（'+yenU(wd0)+'）</b>を初年度に引き出し、以降は毎年インフレ（'+viewOpts.inflationRate+'%）分だけ増やした<b>定額</b>を取り崩す前提です。資産は退職後の想定利回り（'+rrPct+'%）で運用します。<br>これは実際の生活費とは別に「もし4%ルールで取り崩したら資産がどう推移するか」を機械的に試算したものです。トリニティ・スタディは米国の過去データで「30年なら高確率で持つ」とされた目安で、長寿・低金利の日本ではより保守的に見るのが安全です。あくまで参考値です。</div></div>';
+    } else {
+      swrHtml='<div class="card"><div class="section-title">4%ルールで取り崩したら（トリニティ式）</div><div class="lp-note">退職時点で残っている資産がないため、4%ルールの試算は表示できません。</div></div>';
     }
 
     // 最終資産の種類別（現金＝貯金／株式・投信＝投資）
