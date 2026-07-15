@@ -17,7 +17,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260714140746";
+window.APP_VERSION = "20260715135924";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -455,6 +455,34 @@ window.checkAppUpdate = function(cb){
         </div>
         <button class="btn btn-primary" onclick="runSim()">試算する</button>
         <div id="simResult"></div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">年金 簡易シミュレーター</div>
+        <div class="hint">平均年収・加入年数・職業・受給開始年齢から、もらえる公的年金の目安（月額・年額）をざっくり試算します。基礎年金＋厚生年金の概算で、あくまで参考値です。</div>
+        <div style="font-weight:600;margin:10px 0 4px">本人</div>
+        <div class="lp-row">
+          <div><label>平均年収（万円）</label><input id="pnSelfInc" type="number" inputmode="numeric" step="10" placeholder="例：500"></div>
+          <div><label>加入年数（年）</label><input id="pnSelfYears" type="number" inputmode="numeric" step="1" placeholder="例：40"></div>
+        </div>
+        <div class="lp-row">
+          <div><label>職業</label><select id="pnSelfJob"><option value="employee">会社員・公務員</option><option value="self_employed">自営業・フリーランス</option></select></div>
+          <div><label>受給開始年齢</label><input id="pnSelfStart" type="number" inputmode="numeric" step="1" placeholder="例：65" value="65"></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:14px 0 4px"><input type="checkbox" class="chk" id="pnSpouseOn" onchange="document.getElementById('pnSpouseBox').style.display=this.checked?'block':'none'"> 配偶者を含める</label>
+        <div id="pnSpouseBox" style="display:none;margin-top:8px">
+          <div style="font-weight:600;margin:6px 0 4px">配偶者</div>
+          <div class="lp-row">
+            <div><label>平均年収（万円）</label><input id="pnSpInc" type="number" inputmode="numeric" step="10" placeholder="例：300"></div>
+            <div><label>加入年数（年）</label><input id="pnSpYears" type="number" inputmode="numeric" step="1" placeholder="例：40"></div>
+          </div>
+          <div class="lp-row">
+            <div><label>職業</label><select id="pnSpJob"><option value="employee">会社員・公務員</option><option value="self_employed">自営業・フリーランス</option></select></div>
+            <div><label>受給開始年齢</label><input id="pnSpStart" type="number" inputmode="numeric" step="1" placeholder="例：65" value="65"></div>
+          </div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="runPensionSim()">試算する</button>
+        <div id="pnResult"></div>
       </div>
     </section>
 
@@ -1040,25 +1068,29 @@ window.checkAppUpdate = function(cb){
     var retRateAcc = (fin.expectedReturnRate || 0) / 100;                                                  // 現役期の利回り
     var retRateRet = ((fin.retirementReturnRate != null ? fin.retirementReturnRate : fin.expectedReturnRate) || 0) / 100; // 退職後の利回り（リスク低下）
     var infl = (opt.inflationRate || 0) / 100;
+    var salRatio = (ss.salaryInflationRatio != null ? ss.salaryInflationRatio : 100) / 100; // 給与のインフレ連動率
+    var penRatio = (ss.pensionInflationRatio != null ? ss.pensionInflationRatio : 80) / 100; // 年金のインフレ連動率
 
     var rows = [];
     for (var year = baseYear; year <= endYear; year++) {
       var ageSelf = year - selfBirthY;
       var ageSpouse = spouseBirthY != null ? year - spouseBirthY : null;
       var inflMul = pow(1 + infl, year - baseYear);
+      var salInflMul = pow(1 + salRatio * infl, year - baseYear); // 給与の連動倍率
+      var penInflMul = pow(1 + penRatio * infl, year - baseYear); // 年金の連動倍率
 
       // --- 収入 ---
       var iSelf = personIncomeForYear("self", inputs, ctx, year, ageSelf, opt);
       var iSpouse = (spouseBirthY != null) ? personIncomeForYear("spouse", inputs, ctx, year, ageSpouse, opt) : { gross: 0, pension: 0, benefit: 0, severance: 0 };
 
-      var netSalary = grossToNet(iSelf.gross, fin.income.self.netAnnualOverride)
-        + grossToNet(iSpouse.gross, fin.income.spouse ? fin.income.spouse.netAnnualOverride : null);
-      var pension = iSelf.pension + iSpouse.pension;                 // 名目固定
+      var netSalary = (grossToNet(iSelf.gross, fin.income.self.netAnnualOverride)
+        + grossToNet(iSpouse.gross, fin.income.spouse ? fin.income.spouse.netAnnualOverride : null)) * salInflMul; // 給与はインフレ連動率で伸びる
+      var pension = (iSelf.pension + iSpouse.pension) * penInflMul;   // 年金はインフレ連動率で伸びる
       var leaveBen = iSelf.benefit + iSpouse.benefit;              // 育休給付（勤労側）
       var householdBen = householdBenefits(p, ss, year);           // 児童手当・出産一時金（公的側）
       var benefit = leaveBen + householdBen;
       var eduSubsidy = highSchoolSubsidy(p.children, year, ss, (inputs.defaults && inputs.defaults.education) ? inputs.defaults.education : null); // 高校就学支援金（公的側）
-      var severance = iSelf.severance + iSpouse.severance;           // 名目固定
+      var severance = (iSelf.severance + iSpouse.severance) * salInflMul; // 退職金も給与連動
       // 相続・贈与（受け取る側）
       var inhIncome = 0, reAdd = 0, reConvert = 0;
       if (opt.applyInheritance !== false && inputs.inheritance) {
@@ -1292,6 +1324,9 @@ window.checkAppUpdate = function(cb){
       patterns: startAges.map(function (startAge) {
         var r = projectCashflow(inputs, Object.assign({}, options, { pensionStartAgeSelf: startAge, pensionStartAgeSpouse: startAge, applyIncomeTimeline: true }));
         var annual = annualPensionFor(inputs.retirement.self.pension, startAge, inputs.retirement.self.jobType);
+        if (inputs.profile && inputs.profile.spouse && inputs.profile.spouse.exists && inputs.retirement.spouse && inputs.retirement.spouse.pension) {
+          annual += annualPensionFor(inputs.retirement.spouse.pension, startAge, inputs.retirement.spouse.jobType); // 世帯合算（本人＋配偶者）
+        }
         return summarize(r, { startAge: startAge, annualPension: annual });
       })
     };
@@ -2030,6 +2065,34 @@ window.checkAppUpdate = function(cb){
     box.innerHTML = html;
   }
 
+  // 年金 簡易シミュレーター（基礎年金＋厚生年金の概算・繰上げ/繰下げ調整つき）
+  function pnEstimate(incMan, years, jobType, startAge) {
+    var y = Math.max(0, years || 0);
+    var kiso = 795000 * Math.min(y, 40) / 40;                                  // 基礎年金（満額79.5万・40年）
+    var kousei = (jobType === "self_employed") ? 0 : (incMan||0)*10000 * 0.005481 * y; // 厚生年金 報酬比例（概算）
+    var months = ((startAge||65) - 65) * 12;
+    var factor = months < 0 ? (1 + months*0.004) : (months > 0 ? (1 + months*0.007) : 1); // 繰上げ-0.4%/月・繰下げ+0.7%/月
+    return Math.round((kiso + kousei) * factor);
+  }
+  function runPensionSim() {
+    var box = document.getElementById("pnResult");
+    function val(id){ return Number((document.getElementById(id)||{}).value) || 0; }
+    function job(id){ return (document.getElementById(id)||{}).value || "employee"; }
+    var selfAnnual = pnEstimate(val("pnSelfInc"), val("pnSelfYears"), job("pnSelfJob"), val("pnSelfStart")||65);
+    var spouseOn = document.getElementById("pnSpouseOn").checked;
+    var spAnnual = spouseOn ? pnEstimate(val("pnSpInc"), val("pnSpYears"), job("pnSpJob"), val("pnSpStart")||65) : 0;
+    function row(label, annual){ return '<div><div class="sg-label">'+label+'</div><div class="sg-value num">'+yen(Math.round(annual/12))+'<span style="font-size:12px;color:var(--muted)">/月</span></div><div class="hint" style="margin:2px 0 0">年額 '+yen(annual)+'</div></div>'; }
+    var html = '<div class="sim-grid" style="margin-top:16px">' + row("本人の年金", selfAnnual);
+    if (spouseOn) html += row("配偶者の年金", spAnnual);
+    html += '</div>';
+    if (spouseOn) {
+      var tot = selfAnnual + spAnnual;
+      html += '<div class="net-sub" style="margin-top:12px"><div>世帯合計 <b class="num">'+yen(Math.round(tot/12))+'/月</b>（年額 '+yen(tot)+'）</div></div>';
+    }
+    html += '<div class="hint" style="margin:10px 0 0">基礎年金（満額79.5万円・40年加入）＋厚生年金の報酬比例分の概算です。繰上げ受給は月−0.4%、繰下げ受給は月＋0.7%で調整。実際の額は加入状況により変わります。あくまで目安です。</div>';
+    box.innerHTML = html;
+  }
+
   function render() { renderChips(); renderHome(); renderAssets(); renderPortfolio(); renderChart(); renderHistory(); renderGoals(); }
 
   recordCurrentMonth();        // 起動時に当月を自動記録
@@ -2094,6 +2157,8 @@ window.checkAppUpdate = function(cb){
   if(lp.housing.buyYear==null) lp.housing.buyYear=nowY+5;
   if(lp.simSettings.reflectEduSubsidy==null) lp.simSettings.reflectEduSubsidy=true;
   if(lp.simSettings.survivorLivingLevel==null) lp.simSettings.survivorLivingLevel=70;
+  if(lp.simSettings.salaryInflationRatio==null) lp.simSettings.salaryInflationRatio=100;
+  if(lp.simSettings.pensionInflationRatio==null) lp.simSettings.pensionInflationRatio=80;
   function mkCare(){ return { enabled:false, costBasis:"outOfPocket", self:{ enabled:true, mode:"home", monthly:53000, years:5, lumpSum:0 }, spouse:{ enabled:false, mode:"home", monthly:53000, years:5, lumpSum:0 } }; }
   if(!lp.retirement.detail) lp.retirement.detail={ medical:{enabled:false,fromAge:75,annualAmount:150000}, care:mkCare(), lateLife:{enabled:false,fromAge:75,reductionPct:10} };
   if(lp.retirement.detail && !lp.retirement.detail.medical) lp.retirement.detail.medical={enabled:false,fromAge:75,annualAmount:150000};
@@ -2605,6 +2670,8 @@ window.checkAppUpdate = function(cb){
       + '<div class="lp-row"><div>'+field("基準年（西暦）", numI("simSettings.baseYear"))+'</div><div>'+field("本人 死亡想定年齢", numI("simSettings.deathAgeSelf"))+'</div></div>'
       + (lp.profile.spouse.exists ? field("配偶者 死亡想定年齢", numI("simSettings.deathAgeSpouse")) : "")
       + (lp.profile.spouse.exists ? field("死別後の生活費（世帯の何％・遺された1人分）", numI("simSettings.survivorLivingLevel","例：70")) + '<div class="lp-note" style="margin-top:-6px">配偶者と死別した後、遺された1人分の生活費を世帯生活費の何％で見るか（住居費や固定費は残るため半分にはなりにくい。目安70%）。計算は「二人のうち遅い方の寿命」まで行います。</div>' : "")
+      + '<div class="lp-row" style="margin-top:6px"><div>'+field("給与のインフレ連動率（％）", numI("simSettings.salaryInflationRatio","例：100"))+'</div><div>'+field("年金のインフレ連動率（％）", numI("simSettings.pensionInflationRatio","例：80"))+'</div></div>'
+      + '<div class="lp-note" style="margin-top:-6px">収入をインフレにどれだけ連動させるかです。<b>100%</b>なら物価と同じペースで収入も増え、<b>0%</b>なら金額が一生据え置き（従来）。現実には給与はほぼ物価に追随、年金はマクロ経済スライドでやや低め（目安80%）。ここを上げるほど試算はゆるく（資産が持ちやすく）なります。</div>'
       + '<div class="lp-note">高校授業料無償化（就学支援金）の反映は「子供」ステップで設定できます。</div>'
       + '<div class="lp-note">年金受給開始年齢の比較パターンは [60, 65, 70, 75] を使用します。</div>'
       + '</div>'
@@ -2826,7 +2893,7 @@ window.checkAppUpdate = function(cb){
     var pen=window.LifeSim.comparePensionStart(inp, null, {inflationRate:viewOpts.inflationRate});
     var penSeries=pen.patterns.map(function(p,i){ return {label:p.startAge+"歳",color:LP_PAL[i%LP_PAL.length],values:p.rows.map(function(r){return r.balance;})}; });
     var penAges=pen.patterns[0].rows.map(function(r){return r.ageSelf;});
-    var penTable='<table class="lp-cmp" style="margin-top:8px"><thead><tr><th>開始</th><th>年金/年</th><th>資産寿命</th><th>最終資産</th></tr></thead><tbody>'+pen.patterns.map(function(p){return '<tr><td>'+p.startAge+'歳</td><td>'+yenLabel(p.annualPension)+'</td><td>'+fmtAge(p.longevityAge)+'</td><td>'+yenLabel(p.finalBalance)+'</td></tr>';}).join("")+'</tbody></table>';
+    var penTable='<table class="lp-cmp" style="margin-top:8px"><thead><tr><th>開始</th><th>年金/年（世帯）</th><th>資産寿命</th><th>最終資産</th></tr></thead><tbody>'+pen.patterns.map(function(p){return '<tr><td>'+p.startAge+'歳</td><td>'+yenLabel(p.annualPension)+'</td><td>'+fmtAge(p.longevityAge)+'</td><td>'+yenLabel(p.finalBalance)+'</td></tr>';}).join("")+'</tbody></table>';
     var penHtml='<div class="card"><div class="section-title">年金受給開始年齢 比較</div>'+lpChart(penAges,penSeries)+lpLegend(penSeries)+penTable+'</div>';
 
     // 相続あり／なし比較（相続・贈与が設定されている場合）
@@ -2918,7 +2985,7 @@ window.checkAppUpdate = function(cb){
       +'・<b>年金</b>：入力額（ねんきん定期便）または年収・加入年数から概算。繰上げ −0.4%/月・繰下げ +0.7%/月。受給開始年齢以降は就労中でも受給。<br>'
       +'・<b>運用</b>：株式・投信のみ複利で運用（現役 '+(lp.finance.expectedReturnRate||0)+'%／退職後 '+(lp.finance.retirementReturnRate||0)+'%）。現金・不動産は運用しません。<br>'
       +'・<b>取り崩し</b>：不足分は「株式・投信 → 不動産 → その他 → 現金」の順。現金（生活防衛資金）は最後に温存。<br>'
-      +'・<b>インフレ</b>：生活費・住居費・教育費など将来の支出に適用。年金・退職金は名目固定。<br>'
+      +'・<b>インフレ</b>：生活費・住居費・教育費など将来の支出に適用。給与・年金・退職金は「インフレ連動率」（既定：給与'+(lp.simSettings.salaryInflationRatio!=null?lp.simSettings.salaryInflationRatio:100)+'%・年金'+(lp.simSettings.pensionInflationRatio!=null?lp.simSettings.pensionInflationRatio:80)+'%）の分だけ伸びます。<br>'
       +'・<b>教育費</b>：文科省「子供の学習費調査」ベースの概算。高校無償化は就学支援金として収入計上（設定で切替）。<br>'
       +'・相続税や各種特例などの個別事情は簡略化しています。数値はすべて概算・目安です。'
       +'</div></details></div>';
