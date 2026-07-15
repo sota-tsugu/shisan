@@ -17,7 +17,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260715135924";
+window.APP_VERSION = "20260715145427";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -110,6 +110,9 @@ window.checkAppUpdate = function(cb){
   input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:26px; height:26px; border-radius:50%; background:var(--ink); border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,0.28); cursor:pointer; }
   input[type="range"]::-moz-range-thumb { width:22px; height:22px; border-radius:50%; background:var(--ink); border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,0.28); cursor:pointer; }
   input[type="range"]:focus { outline:none; }
+  .ms-slide { display:flex; align-items:center; gap:10px; margin-top:12px; }
+  .ms-slide input[type="range"] { flex:1; }
+  .ms-slide-ic { flex:0 0 22px; text-align:center; font-size:12px; font-weight:600; color:var(--muted); }
   /* カスタム・チェックボックス（チェックで塗り＋白✓） */
   .chk { -webkit-appearance:none; appearance:none; width:22px; height:22px; min-width:22px; margin:0; padding:0; border:1.5px solid var(--line); border-radius:7px; background:#fff; cursor:pointer; position:relative; flex:0 0 auto; vertical-align:middle; transition:background .15s ease, border-color .15s ease, transform .1s ease; }
   .chk:hover { border-color:var(--ink-2); }
@@ -413,25 +416,12 @@ window.checkAppUpdate = function(cb){
       </div>
       <div class="card">
         <div class="section-title">段階目標（マイルストーン）</div>
-        <div class="hint">急な出費や入金の変動で、資産は必ずしも直線的に増えません。だからこそ「何年後にいくら」と無理のない段階目標を置くと、達成のたびに前進を実感でき、モチベーションを保てます。自由に追加・調整してください。</div>
-        <div style="display:flex; gap:8px; align-items:flex-end; margin-bottom:16px;">
+        <div class="hint">急な出費や入金の変動で、資産は必ずしも直線的に増えません。だからこそ「何年後にいくら」と無理のない段階目標を置くと、達成のたびに前進を実感でき、モチベーションを保てます。追加したら、各段階の<b>スライダー</b>で金額と年をその場で調整できます。</div>
+        <div style="display:flex; gap:8px; align-items:flex-end;">
           <div style="flex:0 0 90px"><label>たたき台</label><input id="autoCount" type="number" inputmode="numeric" min="2" max="8" placeholder="4" style="margin-bottom:0"></div>
           <button class="btn btn-outline" style="flex:1; width:auto" onclick="autoStages()">等間隔で自動作成（段）</button>
         </div>
-        <div style="border-top:1px solid var(--line-soft); padding-top:16px;">
-          <div style="display:flex; gap:8px;">
-            <div style="flex:0 0 96px"><label>年（西暦）</label><input id="msYear" type="number" inputmode="numeric" placeholder="2030" style="margin-bottom:10px" oninput="updateMsYearInfo()"></div>
-            <div style="flex:1"><label>金額（円）</label>
-              <div class="amt-field" style="margin-bottom:4px">
-                <input id="msAmount" type="text" inputmode="numeric" placeholder="例：5,000,000" oninput="fmtAmount(this,'msYomi')">
-                <button type="button" class="calc-btn" onclick="openCalc('msAmount','msYomi')" aria-label="電卓を開く"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11.5" x2="8" y2="11.5"/><line x1="12" y1="11.5" x2="12" y2="11.5"/><line x1="16" y1="11.5" x2="16" y2="11.5"/><line x1="8" y1="15.5" x2="8" y2="15.5"/><line x1="12" y1="15.5" x2="12" y2="15.5"/><line x1="16" y1="15.5" x2="16" y2="15.5"/></svg></button>
-              </div>
-            </div>
-          </div>
-          <div id="msYearInfo" style="font-size:11px;color:var(--muted);margin:-2px 0 10px;min-height:13px"></div>
-          <div class="yomi" id="msYomi"></div>
-          <button class="btn btn-outline" onclick="addMilestone()">この段階を追加する</button>
-        </div>
+        <button class="btn btn-primary" style="margin-top:10px" onclick="addMilestone()">＋ 段階を追加</button>
         <div id="roadmap" style="margin-top:20px"></div>
       </div>
       <div class="card">
@@ -1905,43 +1895,56 @@ window.checkAppUpdate = function(cb){
 
   // 段階目標（マイルストーン）
   function saveMilestones() { localStorage.setItem(MKEY, JSON.stringify(milestones)); }
-  function updateMsYearInfo() {
-    const el = document.getElementById("msYearInfo");
-    const v = Math.round(Number(document.getElementById("msYear").value));
-    const nowY = new Date().getFullYear(), age = userAge;
-    if (!(v >= 2000 && v < 2200)) { el.textContent = ""; return; }
-    const yrs = v - nowY;
-    el.textContent = v + "年" + ageSuffix(v, age) + (yrs > 0 ? "・あと" + yrs + "年" : (yrs === 0 ? "・今年" : "・過去の年"));
-  }
   function addMilestone() {
-    const year = Math.round(Number(document.getElementById("msYear").value));
-    const amount = parseAmt("msAmount");
-    if (!(year >= 2000 && year < 2200)) { alert("年を西暦で正しく入力してください"); return; }
-    if (!amount || amount <= 0) { alert("金額を正しく入力してください"); return; }
+    const cur = currentTotals().total;
+    const nowY = new Date().getFullYear();
+    const sorted = [...milestones].sort((a,b)=> a.year - b.year);
+    let year, amount;
+    if (sorted.length) {
+      const last = sorted[sorted.length - 1];
+      year = last.year + 2;
+      amount = goal ? Math.min(goal, Math.round((last.amount + (goal||last.amount)) / 2)) : last.amount + 1000000;
+      if (amount <= last.amount) amount = last.amount + 1000000;
+    } else {
+      year = (targetYear && targetYear > nowY) ? Math.round((nowY + targetYear) / 2) : nowY + 3;
+      amount = goal ? Math.round((cur + goal) / 2) : cur + 3000000;
+    }
     milestones.push({ id: Date.now(), year, amount });
-    saveMilestones(); checkAchievements(true);
-    document.getElementById("msYear").value = "";
-    document.getElementById("msAmount").value = "";
-    document.getElementById("msYomi").textContent = "";
-    document.getElementById("msYearInfo").textContent = "";
-    render();
+    saveMilestones(); checkAchievements(true); render();
   }
+  // スライダーでの直接調整（リスト上でその場編集）
+  let msDirty = false;
+  function msWhen(year) {
+    const nowY = new Date().getFullYear(), yrs = year - nowY;
+    return year + "年" + ageSuffix(year, userAge) + (yrs > 0 ? "・あと" + yrs + "年" : (yrs === 0 ? "・今年" : ""));
+  }
+  function msBarUpdate(id) {
+    const m = milestones.find(x => x.id === id); if (!m) return;
+    const cur = currentTotals().total;
+    const done = cur >= m.amount;
+    const pct = Math.min(100, m.amount > 0 ? cur / m.amount * 100 : 0);
+    const bar = document.getElementById("msbar-" + id); if (bar) bar.style.width = pct + "%";
+    const sub = document.getElementById("mssub-" + id); if (sub) sub.textContent = done ? "達成" : "あと " + yen(Math.max(0, m.amount - cur));
+  }
+  function msAmt(id, val) {
+    const m = milestones.find(x => x.id === id); if (!m) return;
+    m.amount = Math.round(Number(val));
+    const a = document.getElementById("msamt-" + id); if (a) a.textContent = yen(m.amount);
+    const s = document.getElementById("msamtslider-" + id); if (s) s.style.setProperty("--fill", msPct(s) + "%");
+    msBarUpdate(id); msDirty = true;
+  }
+  function msYr(id, val) {
+    const m = milestones.find(x => x.id === id); if (!m) return;
+    m.year = Math.round(Number(val));
+    const d = document.getElementById("msdate-" + id); if (d) d.textContent = msWhen(m.year);
+    const s = document.getElementById("msyrslider-" + id); if (s) s.style.setProperty("--fill", msPct(s) + "%");
+    msDirty = true;
+  }
+  function msPct(s) { const mn = +s.min, mx = +s.max; return mx > mn ? Math.round((+s.value - mn) / (mx - mn) * 100) : 0; }
+  function msCommit() { if (!msDirty) return; msDirty = false; saveMilestones(); checkAchievements(true); render(); }
   function delMilestone(id) {
     milestones = milestones.filter(m => m.id !== id);
-    if (editingMsId === id) editingMsId = null;
     saveMilestones(); render();
-  }
-  function editMilestone(id) { editingMsId = id; renderMilestones(); }
-  function cancelEditMs() { editingMsId = null; renderMilestones(); }
-  function saveMilestone(id) {
-    const year = Math.round(Number(document.getElementById("editYear").value));
-    const amount = parseAmt("editAmount");
-    if (!(year >= 2000 && year < 2200)) { alert("年を西暦で正しく入力してください"); return; }
-    if (!amount || amount <= 0) { alert("金額を正しく入力してください"); return; }
-    const m = milestones.find(x => x.id === id);
-    if (m) { m.year = year; m.amount = amount; }
-    editingMsId = null;
-    saveMilestones(); checkAchievements(true); render();
   }
   function autoStages() {
     if (!goal || !targetYear) { alert("先に「最終目標額」と「目標とする年」を設定してください"); return; }
@@ -1972,43 +1975,28 @@ window.checkAppUpdate = function(cb){
       return;
     }
     const sorted = [...milestones].sort((a,b)=> a.year - b.year || a.amount - b.amount);
+    // スライダーの範囲：金額は目標額（なければ最大段階）を上限に少し余裕、年は今年〜目標年（なければ40年後）
+    const maxAmtRaw = Math.max(goal || 0, cur, ...sorted.map(x=>x.amount)) * 1.2;
+    const amtMax = Math.max(1000000, Math.ceil(maxAmtRaw / 1000000) * 1000000);
+    const yrMax = (targetYear && targetYear > nowY) ? targetYear : nowY + 40;
     let rows = `<div class="tl-row"><div class="tl-line"></div><div class="tl-node current"></div>
       <div class="tl-body"><div class="tl-top"><span class="tl-amt num">${yen(cur)}</span><span class="tl-date">現在地・${nowY}年${age?'（'+age+'歳）':''}</span></div></div></div>`;
-    const calcSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11.5" x2="8" y2="11.5"/><line x1="12" y1="11.5" x2="12" y2="11.5"/><line x1="16" y1="11.5" x2="16" y2="11.5"/><line x1="8" y1="15.5" x2="8" y2="15.5"/><line x1="12" y1="15.5" x2="12" y2="15.5"/><line x1="16" y1="15.5" x2="16" y2="15.5"/></svg>';
     sorted.forEach((m, idx) => {
       const done = cur >= m.amount;
-      if (editingMsId === m.id) {
-        rows += `<div class="tl-row"><div class="tl-line"></div><div class="tl-node ${done?'done':''}">${done?ICON_CHECK:''}</div>
-          <div class="tl-body">
-            <div style="display:flex; gap:8px; align-items:flex-end;">
-              <div style="flex:0 0 84px"><label>年</label><input id="editYear" type="number" inputmode="numeric" value="${m.year}" style="margin-bottom:0"></div>
-              <div style="flex:1"><label>金額（円）</label>
-                <div class="amt-field" style="margin-bottom:0">
-                  <input id="editAmount" type="text" inputmode="numeric" value="${m.amount.toLocaleString('ja-JP')}" oninput="fmtAmount(this,'editYomi')">
-                  <button type="button" class="calc-btn" onclick="openCalc('editAmount','editYomi')" aria-label="電卓を開く">${calcSvg}</button>
-                </div>
-              </div>
-            </div>
-            <div class="yomi" id="editYomi">＝ ${manYomi(m.amount)}</div>
-            <div style="display:flex; gap:8px;">
-              <button class="btn btn-ghost" style="padding:10px" onclick="cancelEditMs()">キャンセル</button>
-              <button class="btn btn-primary" style="padding:10px" onclick="saveMilestone(${m.id})">保存する</button>
-            </div>
-          </div></div>`;
-        return;
-      }
       const prevAmt = idx === 0 ? cur : sorted[idx-1].amount;
       const inc = m.amount - prevAmt;
-      const yrs = m.year - nowY;
-      const when = m.year + "年" + ageSuffix(m.year, age) + (yrs > 0 ? "・あと" + yrs + "年" : (yrs === 0 ? "・今年" : ""));
+      const when = msWhen(m.year);
       const pct = Math.min(100, m.amount > 0 ? cur/m.amount*100 : 0);
+      const aFill = Math.round(Math.min(100, m.amount / amtMax * 100));
+      const yFill = Math.round(Math.min(100, Math.max(0, (m.year - nowY) / (yrMax - nowY) * 100)));
       rows += `<div class="tl-row"><div class="tl-line"></div><div class="tl-node ${done?'done':''}">${done?ICON_CHECK:''}</div>
         <div class="tl-body">
-          <div class="tl-top"><span class="tl-amt num">${yen(m.amount)}</span><span class="tl-date">${when}</span></div>
-          <div class="tl-sub">${done ? (m.achievedAt ? fmtYm(m.achievedAt)+' 達成' : '達成') : 'あと ' + yen(Math.max(0, m.amount - cur))}${inc>0 ? ' ・ 前段から +'+yenShort(inc) : ''}</div>
-          <div class="step-bar" style="margin-top:8px"><div class="step-bar-fill" style="width:${pct}%"></div></div>
-          <div style="display:flex; gap:16px; margin-top:8px;">
-            <button class="step-del" style="color:var(--ink-2)" onclick="editMilestone(${m.id})">編集</button>
+          <div class="tl-top"><span class="tl-amt num" id="msamt-${m.id}">${yen(m.amount)}</span><span class="tl-date" id="msdate-${m.id}">${when}</span></div>
+          <div class="tl-sub"><span id="mssub-${m.id}">${done ? (m.achievedAt ? fmtYm(m.achievedAt)+' 達成' : '達成') : 'あと ' + yen(Math.max(0, m.amount - cur))}</span>${inc>0 ? ' ・ 前段から +'+yenShort(inc) : ''}</div>
+          <div class="step-bar" style="margin-top:8px"><div class="step-bar-fill" id="msbar-${m.id}" style="width:${pct}%"></div></div>
+          <div class="ms-slide"><span class="ms-slide-ic">¥</span><input id="msamtslider-${m.id}" type="range" min="0" max="${amtMax}" step="100000" value="${m.amount}" style="--fill:${aFill}%" oninput="msAmt(${m.id},this.value)" onchange="msCommit()"></div>
+          <div class="ms-slide"><span class="ms-slide-ic">年</span><input id="msyrslider-${m.id}" type="range" min="${nowY}" max="${yrMax}" step="1" value="${Math.max(nowY,Math.min(yrMax,m.year))}" style="--fill:${yFill}%" oninput="msYr(${m.id},this.value)" onchange="msCommit()"></div>
+          <div style="display:flex; justify-content:flex-end; margin-top:4px;">
             <button class="step-del" onclick="delMilestone(${m.id})">削除</button>
           </div>
         </div></div>`;
