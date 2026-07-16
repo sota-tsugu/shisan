@@ -17,7 +17,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260716131910";
+window.APP_VERSION = "20260716132325";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -110,8 +110,9 @@ window.checkAppUpdate = function(cb){
   input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:26px; height:26px; border-radius:50%; background:var(--ink); border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,0.28); cursor:pointer; }
   input[type="range"]::-moz-range-thumb { width:22px; height:22px; border-radius:50%; background:var(--ink); border:3px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,0.28); cursor:pointer; }
   input[type="range"]:focus { outline:none; }
-  .ms-slide { display:flex; align-items:center; gap:10px; margin-top:12px; }
-  .ms-slide input[type="range"] { flex:1; }
+  .ms-slide { display:flex; align-items:center; gap:10px; margin-top:12px; position:relative; }
+  .ms-slide input[type="range"] { flex:1; position:relative; z-index:1; }
+  .ms-center { position:absolute; top:50%; left:calc(50% + 16px); transform:translate(-50%,-50%); width:2px; height:14px; background:#c4c4c8; border-radius:1px; pointer-events:none; z-index:0; }
   .ms-slide-ic { flex:0 0 22px; text-align:center; font-size:12px; font-weight:600; color:var(--muted); }
   .ms-scale { display:flex; justify-content:space-between; margin:3px 0 0 32px; font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums; }
   /* カスタム・チェックボックス（チェックで塗り＋白✓） */
@@ -2006,9 +2007,9 @@ window.checkAppUpdate = function(cb){
           <div class="tl-top"><span class="tl-amt num" id="msamt-${m.id}">${yen(m.amount)}</span><span class="tl-date" id="msdate-${m.id}">${when}</span></div>
           <div class="tl-sub"><span id="mssub-${m.id}">${done ? (m.achievedAt ? fmtYm(m.achievedAt)+' 達成' : '達成') : 'あと ' + yen(Math.max(0, m.amount - cur))}</span>${inc>0 ? ' ・ 前段から +'+yenShort(inc) : ''}</div>
           <div class="step-bar" style="margin-top:10px"><div class="step-bar-fill" id="msbar-${m.id}" style="width:${pct}%"></div></div>
-          <div class="ms-slide"><span class="ms-slide-ic">¥</span><input id="msamtslider-${m.id}" type="range" min="0" max="${amtMax}" step="${amtStep}" value="${m.amount}" style="--fill:${aFill}%" oninput="msAmt(${m.id},this.value)" onchange="msCommit()"></div>
+          <div class="ms-slide"><span class="ms-slide-ic">¥</span><i class="ms-center"></i><input id="msamtslider-${m.id}" type="range" min="0" max="${amtMax}" step="${amtStep}" value="${m.amount}" style="--fill:${aFill}%" oninput="msAmt(${m.id},this.value)" onchange="msCommit()"></div>
           <div class="ms-scale"><span>0</span><span>${yenShort(amtMax)}</span></div>
-          <div class="ms-slide"><span class="ms-slide-ic">年</span><input id="msyrslider-${m.id}" type="range" min="${nowY}" max="${yrMax}" step="1" value="${Math.max(nowY,Math.min(yrMax,m.year))}" style="--fill:${yFill}%" oninput="msYr(${m.id},this.value)" onchange="msCommit()"></div>
+          <div class="ms-slide"><span class="ms-slide-ic">年</span><i class="ms-center"></i><input id="msyrslider-${m.id}" type="range" min="${nowY}" max="${yrMax}" step="1" value="${Math.max(nowY,Math.min(yrMax,m.year))}" style="--fill:${yFill}%" oninput="msYr(${m.id},this.value)" onchange="msCommit()"></div>
           <div class="ms-scale"><span>${nowY}年</span><span>${yrMax}年</span></div>
           <div style="display:flex; justify-content:flex-end;">
             <button class="step-del" onclick="delMilestone(${m.id})">削除</button>
