@@ -17,7 +17,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260716143544";
+window.APP_VERSION = "20260716144944";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -1208,7 +1208,7 @@ window.checkAppUpdate = function(cb){
         if (ri.years > 0) eY = sY + ri.years - 1;                                   // 積立年数で指定
         else if (ri.endYear) eY = ri.endYear;                                        // 旧データ互換
         else eY = selfBirthY + (ret.self ? ret.self.retireAge : 65);                 // 既定：退職まで
-        if (year >= sY && year <= eY) invAmt = ri.annualAmount;
+        if (year >= sY && year <= eY) invAmt = ri.annualAmount * ((ss.regularInvestInflate === true) ? inflMul : 1); // インフレ連動で毎年増額（実質の積立力を維持）
       }
 
       // --- 収支反映 ---
@@ -2179,6 +2179,7 @@ window.checkAppUpdate = function(cb){
   if(lp.simSettings.survivorLivingLevel==null) lp.simSettings.survivorLivingLevel=70;
   if(lp.simSettings.salaryInflationRatio==null) lp.simSettings.salaryInflationRatio=100;
   if(lp.simSettings.pensionInflationRatio==null) lp.simSettings.pensionInflationRatio=80;
+  if(lp.simSettings.regularInvestInflate==null) lp.simSettings.regularInvestInflate=false;
   function mkCare(){ return { enabled:false, costBasis:"outOfPocket", self:{ enabled:true, mode:"home", monthly:53000, years:5, lumpSum:0 }, spouse:{ enabled:false, mode:"home", monthly:53000, years:5, lumpSum:0 } }; }
   if(!lp.retirement.detail) lp.retirement.detail={ medical:{enabled:false,fromAge:75,annualAmount:150000}, care:mkCare(), lateLife:{enabled:false,fromAge:75,reductionPct:10} };
   if(lp.retirement.detail && !lp.retirement.detail.medical) lp.retirement.detail.medical={enabled:false,fromAge:75,annualAmount:150000};
@@ -2835,25 +2836,33 @@ window.checkAppUpdate = function(cb){
     var inp=baseInputsForView();
     var head=window.LifeSim.projectCashflow(inp,{baseYear:base, inflationRate:viewOpts.inflationRate, pensionStartAgeSelf:viewOpts.pensionStartAge, pensionStartAgeSpouse:viewOpts.pensionStartAge, applyIncomeTimeline:true});
     var ages=head.rows.map(function(r){return r.ageSelf;});
-    var totalIncome=head.rows.reduce(function(s,r){return s+r.totalIncome+(r.investReturn||0)+(r.inhAsset||0);},0);
-    var totalExpense=head.rows.reduce(function(s,r){return s+r.totalExpense;},0);
+    var vInfl=(viewOpts.inflationRate||0)/100;
+    function defl(yr){ return viewOpts.real ? Math.pow(1+vInfl, yr-base) : 1; } // 実質＝今のお金の価値に割り戻す
+    var totalIncome=head.rows.reduce(function(s,r){return s+(r.totalIncome+(r.investReturn||0)+(r.inhAsset||0))/defl(r.year);},0);
+    var totalExpense=head.rows.reduce(function(s,r){return s+r.totalExpense/defl(r.year);},0);
     var housingTotal=head.rows.reduce(function(s,r){return s+r.housing;},0);
     var eduList=eduPerChild(base, head.summary.endYear);
     var eduTotal=eduList.reduce(function(s,e){return s+e.total;},0);
-    var shortfall=head.summary.finalBalance<0?-head.summary.finalBalance:0;
+    var finalBal=head.summary.finalBalance/defl(head.summary.endYear);
+    var shortfall=finalBal<0?-finalBal:0;
     var initAssets=(lp.finance.assetBreakdown.cash||0)+(lp.finance.assetBreakdown.securities||0)+(lp.finance.assetBreakdown.realEstate||0)+(lp.finance.assetBreakdown.other||0);
+    var realTag=viewOpts.real?'（実質）':'';
+    var realToggle='<div class="toggle" style="margin-bottom:12px"><button type="button" class="'+(!viewOpts.real?'active':'')+'" onclick="lpSetReal(false)">名目</button><button type="button" class="'+(viewOpts.real?'active':'')+'" onclick="lpSetReal(true)">実質（今のお金）</button></div>';
 
     var headHtml='<div class="card"><div class="section-title">試算結果（退職'+viewOpts.retireAgeSelf+'歳／インフレ'+viewOpts.inflationRate+'%／年金'+viewOpts.pensionStartAge+'歳受給）</div>'
+      +realToggle
       +'<div class="total-label">資産寿命'+(lp.profile.spouse.exists?'（世帯・遅い方の寿命まで）':'')+'</div><div class="total-amount num" style="font-size:34px">'+fmtAge(head.summary.longevityAge)+(head.summary.longevityAge!=null?'<span style="font-size:14px;color:var(--muted);font-weight:400"> （'+(parseInt((lp.profile.self.birthYearMonth||"").slice(0,4))+head.summary.longevityAge)+'年頃）</span>':'')+'</div>'
       +(lp.profile.spouse.exists?'<div class="lp-note" style="margin-top:2px">配偶者がいるため、<b>配偶者の死亡想定年齢まで</b>計算しています（本人の死亡後は本人の収入が止まり、生活費は遺された1人分に減額、死亡保険金があれば加算）。資産寿命は本人の年齢換算での表示です。</div>':'')
-      +'<div class="breakdown"><div><div class="b-label">生涯収入（目安）</div><div class="b-amount num">'+yenU(totalIncome)+'</div><div style="font-size:11px;color:var(--muted)" class="num">平均 '+yen(Math.round(totalIncome/(head.rows.length||1)))+'/年</div></div>'
-      +'<div><div class="b-label">生涯支出（目安）</div><div class="b-amount num">'+yenU(totalExpense)+'</div><div style="font-size:11px;color:var(--muted)" class="num">平均 '+yen(Math.round(totalExpense/(head.rows.length||1)))+'/年</div></div></div>'
-      +'<div class="net-sub" style="margin-top:14px"><div>最終資産（'+head.summary.endYear+'年）<b class="num">'+yenU(head.summary.finalBalance)+'</b></div>'
+      +'<div class="breakdown"><div><div class="b-label">生涯収入（目安）'+realTag+'</div><div class="b-amount num">'+yenU(totalIncome)+'</div><div style="font-size:11px;color:var(--muted)" class="num">平均 '+yen(Math.round(totalIncome/(head.rows.length||1)))+'/年</div></div>'
+      +'<div><div class="b-label">生涯支出（目安）'+realTag+'</div><div class="b-amount num">'+yenU(totalExpense)+'</div><div style="font-size:11px;color:var(--muted)" class="num">平均 '+yen(Math.round(totalExpense/(head.rows.length||1)))+'/年</div></div></div>'
+      +'<div class="net-sub" style="margin-top:14px"><div>最終資産（'+head.summary.endYear+'年）'+realTag+'<b class="num">'+yenU(finalBal)+'</b></div>'
       +(shortfall>0?'<div>生涯の不足額<b class="num debt-v">'+yenU(shortfall)+'</b></div>':'')+'</div>'
-      +'<div class="lp-note" style="margin-top:8px">現在資産 <b>'+yenU(initAssets)+'</b> ＋ 生涯収入 '+yenU(totalIncome)+' − 生涯支出 '+yenU(totalExpense)+' ＝ 最終資産 <b>'+yenU(head.summary.finalBalance)+'</b></div>'
+      +(viewOpts.real
+        ? '<div class="lp-note" style="margin-top:8px">「実質」は各年の金額を<b>今のお金の価値</b>に割り戻した概算です（インフレ'+viewOpts.inflationRate+'%で毎年割戻し）。割戻しのため内訳の合計は厳密には一致しません。名目に戻すと現在資産＋生涯収入−生涯支出＝最終資産が成り立ちます。</div>'
+        : '<div class="lp-note" style="margin-top:8px">現在資産 <b>'+yenU(initAssets)+'</b> ＋ 生涯収入 '+yenU(totalIncome)+' − 生涯支出 '+yenU(totalExpense)+' ＝ 最終資産 <b>'+yenU(head.summary.finalBalance)+'</b></div>')
       +'</div>';
 
-    var mainChart='<div class="card"><div class="section-title">資産推移</div>'+lpChart(ages,[{label:"資産残高",color:"#18181b",values:head.rows.map(function(r){return r.balance;})}])+'<div class="lp-note">破線はゼロ（資産が尽きるライン）。</div></div>';
+    var mainChart='<div class="card"><div class="section-title">資産推移'+realTag+'</div>'+lpChart(ages,[{label:"資産残高",color:"#18181b",values:head.rows.map(function(r){return r.balance/defl(r.year);})}])+'<div class="lp-note">破線はゼロ（資産が尽きるライン）。'+(viewOpts.real?'金額は今のお金の価値に換算しています。':'')+'</div></div>';
 
     // ===== 最終資産の内訳（根拠）＋ 年次明細 =====
     var S=function(k){ return head.rows.reduce(function(a,r){return a+(r[k]||0);},0); };
@@ -2896,7 +2905,40 @@ window.checkAppUpdate = function(cb){
     var inflSeries=infl.patterns.map(function(p,i){ return {label:p.rate+"%",color:LP_PAL[i%LP_PAL.length],values:p.rows.map(function(r){return r.balance;})}; });
     var inflAges=infl.patterns[0].rows.map(function(r){return r.ageSelf;});
     var inflTable='<table class="lp-cmp"><thead><tr><th>インフレ率</th><th>資産寿命</th><th>最終資産</th></tr></thead><tbody>'+infl.patterns.map(function(p){return '<tr><td>'+p.rate+'%</td><td>'+fmtAge(p.longevityAge)+'</td><td>'+yenLabel(p.finalBalance)+'</td></tr>';}).join("")+'</tbody></table>';
-    var inflHtml='<div class="card"><div class="section-title">インフレ率パターン比較</div>'+lpChart(inflAges,inflSeries)+lpLegend(inflSeries)+inflTable+'</div>';
+    var inflHtml='<div class="card"><div class="section-title">インフレ率パターン比較</div>'+lpChart(inflAges,inflSeries)+lpLegend(inflSeries)+inflTable+'<div class="lp-note">高めのインフレ（3〜4%）でのストレステストにも使えます。上のスライダーやインフレ設定で率を上げて、資産寿命・最終資産がどう変わるか確認してください。</div></div>';
+
+    // ===== インフレ対策 =====
+    var idInfl=(viewOpts.inflationRate||0)/100;
+    var idAcc=(lp.finance.expectedReturnRate||0)/100;
+    var idYears=head.summary.endYear-base;
+    var id0Age=head.rows[0]?head.rows[0].ageSelf:0;
+    var idAges=[], idCash=[], idInv=[];
+    for(var it=0; it<=idYears; it++){ idAges.push(id0Age+it); idCash.push(initAssets/Math.pow(1+idInfl,it)); idInv.push(initAssets*Math.pow((1+idAcc)/(1+idInfl),it)); }
+    var idCashEnd=idCash[idCash.length-1], idInvEnd=idInv[idInv.length-1];
+    var idKeepPct=Math.round(100/Math.pow(1+idInfl,idYears));
+    var origAcc=lp.finance.expectedReturnRate||0, origRet=(lp.finance.retirementReturnRate!=null?lp.finance.retirementReturnRate:origAcc);
+    function idSim(d){ var i2=baseInputsForView(); i2.finance.expectedReturnRate=origAcc+d; i2.finance.retirementReturnRate=origRet+d; return window.LifeSim.projectCashflow(i2,{baseYear:base,inflationRate:viewOpts.inflationRate,pensionStartAgeSelf:viewOpts.pensionStartAge,pensionStartAgeSpouse:viewOpts.pensionStartAge,applyIncomeTimeline:true}); }
+    var needDelta=null; for(var dd=0; dd<=8.0001; dd+=0.5){ if(idSim(dd).summary.finalBalance>=0){ needDelta=dd; break; } }
+    var needReturn=(needDelta==null)?null:(origAcc+needDelta);
+    function idRealFinal(rr){ return rr.summary.finalBalance/Math.pow(1+idInfl, rr.summary.endYear-base); }
+    var idCmp=[0,1,2].map(function(d){ var rr=idSim(d); return {ret:origAcc+d, lon:rr.summary.longevityAge, real:idRealFinal(rr)}; });
+    var hasRI=lp.finance.regularInvestment && (lp.finance.regularInvestment.annualAmount>0);
+    var inflDefHtml='<div class="card"><div class="section-title">インフレ対策</div>'
+      +'<div class="lp-note" style="margin-top:0">インフレに資産が食われないための視点をまとめました（インフレ'+viewOpts.inflationRate+'%前提）。</div>'
+      +'<div class="section-title" style="font-size:14px;margin-top:14px">現在資産の購買力：現金のまま vs 投資</div>'
+      +lpChart(idAges,[{label:"現金のまま",color:"#a1a1aa",values:idCash},{label:"投資",color:"#059669",values:idInv}])+lpLegend([{label:"現金のまま",color:"#a1a1aa"},{label:"投資（利回り"+origAcc+"%）",color:"#059669"}])
+      +'<div class="lp-note">現在資産 '+yenU(initAssets)+' を今のお金の価値で見ると、'+idYears+'年後には現金のままで <b>'+yenU(idCashEnd)+'</b>（今の約'+idKeepPct+'%）まで目減り、投資した場合は <b>'+yenU(idInvEnd)+'</b>。何もしないと現金の価値はインフレで確実に減ります。</div>'
+      +'<div class="section-title" style="font-size:14px;margin-top:16px">インフレに負けない必要条件（逆算）</div>'
+      +'<div class="road-stat"><div><div class="rs-label">購買力を保つ利回り</div><div class="rs-value num">'+viewOpts.inflationRate+'%</div></div>'
+      +'<div><div class="rs-label">資産が尽きない利回り</div><div class="rs-value num" style="color:'+(needDelta===0?'var(--up)':'var(--ink)')+'">'+(needReturn==null?'8%超':(needDelta===0?'現状でOK':'約'+needReturn.toFixed(1)+'%'))+'</div></div></div>'
+      +'<div class="lp-note">「購買力を保つ利回り」はインフレ率と同じで、現金の価値を保つ最低ラインです。「資産が尽きない利回り」は、最終資産が0以上になる最小の想定利回り（現役・退職後とも同じだけ引き上げた場合）。'+(needDelta===0?'現在の想定利回り '+origAcc+'% で足りています。':'')+'</div>'
+      +'<table class="lp-cmp" style="margin-top:8px"><thead><tr><th>想定利回り</th><th>資産寿命</th><th>最終資産（実質）</th></tr></thead><tbody>'
+      +idCmp.map(function(c,i){ return '<tr><td>'+(i===0?'現状 ':'＋'+i+'% → ')+c.ret+'%</td><td>'+fmtAge(c.lon)+'</td><td class="num">'+yenLabel(c.real)+'</td></tr>'; }).join("")
+      +'</tbody></table><div class="lp-note">利回りを上げた場合の効果（最終資産は今のお金換算）。利回りを上げるほどインフレに強くなりますが、その分リスク（値動き）も大きくなります。</div>'
+      +'<div class="section-title" style="font-size:14px;margin-top:16px">積立をインフレに連動</div>'
+      +'<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0"><input type="checkbox" class="chk" '+(lp.simSettings.regularInvestInflate?'checked':'')+' onchange="lpToggleInvestInflate(this.checked)"> 毎月の積立額をインフレに合わせて自動増額する</label>'
+      +'<div class="lp-note">オンにすると積立額を毎年インフレ分だけ増やし、実質の積立力（今の価値での積立額）を維持します。長期ほどインフレ耐性が高まります。'+(hasRI?'':'<b>今は月額積立が0のため効果は出ません</b>（「現在の資産」で月額積立を入力してください）。')+'</div>'
+      +'</div>';
 
     var empHtml="";
     if(lp.incomeTimeline.events.length){
@@ -3009,14 +3051,16 @@ window.checkAppUpdate = function(cb){
       +'・<b>教育費</b>：文科省「子供の学習費調査」ベースの概算。高校無償化は就学支援金として収入計上（設定で切替）。<br>'
       +'・相続税や各種特例などの個別事情は簡略化しています。数値はすべて概算・目安です。'
       +'</div></details></div>';
-    host.innerHTML=headHtml+mainChart+assumpHtml+basisHtml+compHtml+swrHtml+fundsHtml+returnHtml+inflHtml+empHtml+penHtml+inhHtml+beqHtml+'<div class="lp-note">すべて概算・目安です。正確な数値は専門家にご確認ください。</div>';
+    host.innerHTML=headHtml+mainChart+assumpHtml+basisHtml+compHtml+swrHtml+fundsHtml+returnHtml+inflHtml+inflDefHtml+empHtml+penHtml+inhHtml+beqHtml+'<div class="lp-note">すべて概算・目安です。正確な数値は専門家にご確認ください。</div>';
   }
   window.renderDashboard=renderDashboard;
   window.lpVO=function(key,val){ viewOpts[key]=Number(val); var l=document.getElementById("lpVO_"+key); if(l)l.textContent=(key==="inflationRate"?val+"%":val+"歳"); renderDashboard(); };
+  window.lpSetReal=function(v){ viewOpts.real=v; renderDashboard(); };
+  window.lpToggleInvestInflate=function(v){ lp.simSettings.regularInvestInflate=!!v; save(); renderDashboard(); };
 
   function stepResult(){
     if(!lp.profile.self.birthYearMonth){ return '<div class="card"><div class="empty">「プロフィール」で本人の生年を入力してください。</div></div>'; }
-    viewOpts={ retireAgeSelf:lp.retirement.self.retireAge, inflationRate:(lp.simSettings.inflationRates[0]!=null?lp.simSettings.inflationRates[0]:0), pensionStartAge:(lp.retirement.self.pension.startAge||65) };
+    viewOpts={ retireAgeSelf:lp.retirement.self.retireAge, inflationRate:(lp.simSettings.inflationRates[0]!=null?lp.simSettings.inflationRates[0]:0), pensionStartAge:(lp.retirement.self.pension.startAge||65), real:(viewOpts&&viewOpts.real)||false };
     var q='<div class="card"><div class="section-title">クイック編集（動かすと即再計算）</div>'
       +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><label style="flex:0 0 92px;margin:0">退職年齢</label><div class="lpq-wrap"><i class="lpq-center"></i><input type="range" min="55" max="75" step="1" value="'+viewOpts.retireAgeSelf+'" oninput="lpVO(\'retireAgeSelf\',this.value)" style="--fill:'+Math.round((viewOpts.retireAgeSelf-55)/20*100)+'%"></div><span id="lpVO_retireAgeSelf" class="num" style="min-width:44px;text-align:right;font-weight:600">'+viewOpts.retireAgeSelf+'歳</span></div>'
       +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><label style="flex:0 0 92px;margin:0">インフレ率</label><div class="lpq-wrap"><i class="lpq-center"></i><input type="range" min="0" max="4" step="0.5" value="'+viewOpts.inflationRate+'" oninput="lpVO(\'inflationRate\',this.value)" style="--fill:'+Math.round(viewOpts.inflationRate/4*100)+'%"></div><span id="lpVO_inflationRate" class="num" style="min-width:44px;text-align:right;font-weight:600">'+viewOpts.inflationRate+'%</span></div>'
