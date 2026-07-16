@@ -17,7 +17,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260716132325";
+window.APP_VERSION = "20260716142336";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -112,7 +112,7 @@ window.checkAppUpdate = function(cb){
   input[type="range"]:focus { outline:none; }
   .ms-slide { display:flex; align-items:center; gap:10px; margin-top:12px; position:relative; }
   .ms-slide input[type="range"] { flex:1; position:relative; z-index:1; }
-  .ms-center { position:absolute; top:50%; left:calc(50% + 16px); transform:translate(-50%,-50%); width:2px; height:14px; background:#c4c4c8; border-radius:1px; pointer-events:none; z-index:0; }
+  .ms-center { position:absolute; top:50%; left:32px; right:0; transform:translateY(-50%); height:2px; background:rgba(0,0,0,0.12); border-radius:1px; pointer-events:none; z-index:2; }
   .ms-slide-ic { flex:0 0 22px; text-align:center; font-size:12px; font-weight:600; color:var(--muted); }
   .ms-scale { display:flex; justify-content:space-between; margin:3px 0 0 32px; font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums; }
   /* カスタム・チェックボックス（チェックで塗り＋白✓） */
