@@ -17,7 +17,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260716142336";
+window.APP_VERSION = "20260716143544";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -113,6 +113,9 @@ window.checkAppUpdate = function(cb){
   .ms-slide { display:flex; align-items:center; gap:10px; margin-top:12px; position:relative; }
   .ms-slide input[type="range"] { flex:1; position:relative; z-index:1; }
   .ms-center { position:absolute; top:50%; left:32px; right:0; transform:translateY(-50%); height:2px; background:rgba(0,0,0,0.12); border-radius:1px; pointer-events:none; z-index:2; }
+  .lpq-wrap { position:relative; flex:1; display:flex; }
+  .lpq-wrap input[type="range"] { flex:1; position:relative; z-index:1; }
+  .lpq-center { position:absolute; top:50%; left:0; right:0; transform:translateY(-50%); height:2px; background:rgba(0,0,0,0.12); border-radius:1px; pointer-events:none; z-index:2; }
   .ms-slide-ic { flex:0 0 22px; text-align:center; font-size:12px; font-weight:600; color:var(--muted); }
   .ms-scale { display:flex; justify-content:space-between; margin:3px 0 0 32px; font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums; }
   /* カスタム・チェックボックス（チェックで塗り＋白✓） */
@@ -188,7 +191,7 @@ window.checkAppUpdate = function(cb){
   .tl-date { font-size:12px; color:var(--muted); flex-shrink:0; font-weight:500; }
   .tl-sub { font-size:12px; color:var(--ink-2); margin-top:3px; }
   .step-bar { height:6px; border-radius:999px; background:var(--line-soft); overflow:hidden; }
-  .step-bar-fill { height:100%; border-radius:999px; background:var(--ink); transition:width .3s ease; }
+  .step-bar-fill { height:100%; border-radius:999px; background:var(--up); transition:width .3s ease; }
   .tl-card.done .step-bar-fill { background:var(--up); }
   .step-del { background:none; border:none; width:auto; padding:6px 2px 0; font-size:12px; font-weight:500; color:var(--muted); cursor:pointer; }
   .step-del:active { color:var(--down); }
@@ -1937,18 +1940,32 @@ window.checkAppUpdate = function(cb){
     const bar = document.getElementById("msbar-" + id); if (bar) bar.style.width = pct + "%";
     const sub = document.getElementById("mssub-" + id); if (sub) sub.textContent = done ? "達成" : "あと " + yen(Math.max(0, m.amount - cur));
   }
+  // 前後の段（年順）を返す。交差防止のクランプに使う
+  function msNeighbors(id) {
+    const sorted = [...milestones].sort((a,b)=> a.year - b.year || a.amount - b.amount);
+    const i = sorted.findIndex(x => x.id === id);
+    return { prev: i > 0 ? sorted[i-1] : null, next: i < sorted.length-1 ? sorted[i+1] : null };
+  }
   function msAmt(id, val) {
     const m = milestones.find(x => x.id === id); if (!m) return;
-    m.amount = Math.round(Number(val));
+    let v = Math.round(Number(val));
+    const nb = msNeighbors(id); // 前段より下・次段より上には行かせない（交差防止）
+    if (nb.prev && v < nb.prev.amount) v = nb.prev.amount;
+    if (nb.next && v > nb.next.amount) v = nb.next.amount;
+    m.amount = v;
+    const s = document.getElementById("msamtslider-" + id); if (s) { if (+s.value !== v) s.value = v; s.style.setProperty("--fill", msPct(s) + "%"); }
     const a = document.getElementById("msamt-" + id); if (a) a.textContent = yen(m.amount);
-    const s = document.getElementById("msamtslider-" + id); if (s) s.style.setProperty("--fill", msPct(s) + "%");
     msBarUpdate(id); msDirty = true;
   }
   function msYr(id, val) {
     const m = milestones.find(x => x.id === id); if (!m) return;
-    m.year = Math.round(Number(val));
+    let v = Math.round(Number(val));
+    const nb = msNeighbors(id); // 前段より前・次段より後ろには行かせない（交差防止）
+    if (nb.prev && v < nb.prev.year) v = nb.prev.year;
+    if (nb.next && v > nb.next.year) v = nb.next.year;
+    m.year = v;
+    const s = document.getElementById("msyrslider-" + id); if (s) { if (+s.value !== v) s.value = v; s.style.setProperty("--fill", msPct(s) + "%"); }
     const d = document.getElementById("msdate-" + id); if (d) d.textContent = msWhen(m.year);
-    const s = document.getElementById("msyrslider-" + id); if (s) s.style.setProperty("--fill", msPct(s) + "%");
     msDirty = true;
   }
   function msPct(s) { const mn = +s.min, mx = +s.max; return mx > mn ? Math.round((+s.value - mn) / (mx - mn) * 100) : 0; }
@@ -3001,9 +3018,9 @@ window.checkAppUpdate = function(cb){
     if(!lp.profile.self.birthYearMonth){ return '<div class="card"><div class="empty">「プロフィール」で本人の生年を入力してください。</div></div>'; }
     viewOpts={ retireAgeSelf:lp.retirement.self.retireAge, inflationRate:(lp.simSettings.inflationRates[0]!=null?lp.simSettings.inflationRates[0]:0), pensionStartAge:(lp.retirement.self.pension.startAge||65) };
     var q='<div class="card"><div class="section-title">クイック編集（動かすと即再計算）</div>'
-      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><label style="flex:0 0 92px;margin:0">退職年齢</label><input type="range" min="55" max="75" step="1" value="'+viewOpts.retireAgeSelf+'" oninput="lpVO(\'retireAgeSelf\',this.value)" style="flex:1;--fill:'+Math.round((viewOpts.retireAgeSelf-55)/20*100)+'%"><span id="lpVO_retireAgeSelf" class="num" style="min-width:44px;text-align:right;font-weight:600">'+viewOpts.retireAgeSelf+'歳</span></div>'
-      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><label style="flex:0 0 92px;margin:0">インフレ率</label><input type="range" min="0" max="4" step="0.5" value="'+viewOpts.inflationRate+'" oninput="lpVO(\'inflationRate\',this.value)" style="flex:1;--fill:'+Math.round(viewOpts.inflationRate/4*100)+'%"><span id="lpVO_inflationRate" class="num" style="min-width:44px;text-align:right;font-weight:600">'+viewOpts.inflationRate+'%</span></div>'
-      +'<div style="display:flex;align-items:center;gap:10px"><label style="flex:0 0 92px;margin:0">年金受給開始</label><input type="range" min="60" max="75" step="1" value="'+viewOpts.pensionStartAge+'" oninput="lpVO(\'pensionStartAge\',this.value)" style="flex:1;--fill:'+Math.round((viewOpts.pensionStartAge-60)/15*100)+'%"><span id="lpVO_pensionStartAge" class="num" style="min-width:44px;text-align:right;font-weight:600">'+viewOpts.pensionStartAge+'歳</span></div>'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><label style="flex:0 0 92px;margin:0">退職年齢</label><div class="lpq-wrap"><i class="lpq-center"></i><input type="range" min="55" max="75" step="1" value="'+viewOpts.retireAgeSelf+'" oninput="lpVO(\'retireAgeSelf\',this.value)" style="--fill:'+Math.round((viewOpts.retireAgeSelf-55)/20*100)+'%"></div><span id="lpVO_retireAgeSelf" class="num" style="min-width:44px;text-align:right;font-weight:600">'+viewOpts.retireAgeSelf+'歳</span></div>'
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><label style="flex:0 0 92px;margin:0">インフレ率</label><div class="lpq-wrap"><i class="lpq-center"></i><input type="range" min="0" max="4" step="0.5" value="'+viewOpts.inflationRate+'" oninput="lpVO(\'inflationRate\',this.value)" style="--fill:'+Math.round(viewOpts.inflationRate/4*100)+'%"></div><span id="lpVO_inflationRate" class="num" style="min-width:44px;text-align:right;font-weight:600">'+viewOpts.inflationRate+'%</span></div>'
+      +'<div style="display:flex;align-items:center;gap:10px"><label style="flex:0 0 92px;margin:0">年金受給開始</label><div class="lpq-wrap"><i class="lpq-center"></i><input type="range" min="60" max="75" step="1" value="'+viewOpts.pensionStartAge+'" oninput="lpVO(\'pensionStartAge\',this.value)" style="--fill:'+Math.round((viewOpts.pensionStartAge-60)/15*100)+'%"></div><span id="lpVO_pensionStartAge" class="num" style="min-width:44px;text-align:right;font-weight:600">'+viewOpts.pensionStartAge+'歳</span></div>'
       +'</div>';
     return renderScenarioCard()+'<div id="lpCompare"></div>'+q+'<div id="lpDash"></div>';
   }
