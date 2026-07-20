@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260720065147";
+window.APP_VERSION = "20260720143123";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -125,6 +125,13 @@ window.checkAppUpdate = function(cb){
   .lpq-center { position:absolute; top:50%; left:0; right:0; transform:translateY(-50%); height:2px; background:rgba(0,0,0,0.12); border-radius:1px; pointer-events:none; z-index:2; }
   .ms-slide-ic { flex:0 0 22px; text-align:center; font-size:12px; font-weight:600; color:var(--muted); }
   .ms-scale { display:flex; justify-content:space-between; margin:3px 0 0 32px; font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .det-chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .det-chips > div { flex:1; min-width:calc(50% - 4px); background:var(--fill-soft); border-radius:12px; padding:11px 13px; }
+  .det-chips .dc-l { font-size:11px; color:var(--muted); }
+  .det-chips .dc-v { font-size:18px; font-weight:600; margin-top:4px; }
+  .det-tgs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+  .det-tg { border:1px solid var(--line); background:#fff; color:var(--muted); border-radius:999px; padding:6px 12px; font-size:12px; font-weight:600; font-family:inherit; cursor:pointer; width:auto; }
+  .det-tg.on { background:var(--ink); color:#fff; border-color:var(--ink); }
   .est-tag { display:inline-block; font-size:11px; font-weight:600; border-radius:999px; padding:2px 9px; margin-left:6px; }
   .est-tag.self { color:#18181b; background:var(--fill-soft); border:1px solid var(--line); }
   .est-tag.spouse { color:#047857; background:var(--up-soft); border:1px solid #bbf7d0; }
@@ -1161,8 +1168,9 @@ window.checkAppUpdate = function(cb){
       var iSelf = personIncomeForYear("self", inputs, ctx, year, ageSelf, opt);
       var iSpouse = (spouseBirthY != null) ? personIncomeForYear("spouse", inputs, ctx, year, ageSpouse, opt) : { gross: 0, pension: 0, benefit: 0, severance: 0 };
 
-      var netSalary = (grossToNet(iSelf.gross, fin.income.self.netAnnualOverride)
-        + grossToNet(iSpouse.gross, fin.income.spouse ? fin.income.spouse.netAnnualOverride : null)) * salInflMul; // 給与はインフレ連動率で伸びる
+      var netSelf = grossToNet(iSelf.gross, fin.income.self.netAnnualOverride) * salInflMul;
+      var netSpouse = grossToNet(iSpouse.gross, fin.income.spouse ? fin.income.spouse.netAnnualOverride : null) * salInflMul;
+      var netSalary = netSelf + netSpouse; // 給与はインフレ連動率で伸びる
       var pension = (iSelf.pension + iSpouse.pension) * penInflMul;   // 年金はインフレ連動率で伸びる
       var leaveBen = iSelf.benefit + iSpouse.benefit;              // 育休給付（勤労側）
       var householdBen = householdBenefits(p, ss, year);           // 児童手当・出産一時金（公的側）
@@ -1323,7 +1331,7 @@ window.checkAppUpdate = function(cb){
       var balance = sumBuckets(buckets);
       rows.push({
         year: year, ageSelf: ageSelf, ageSpouse: ageSpouse,
-        netSalary: Math.round(netSalary), pension: Math.round(pension),
+        netSalary: Math.round(netSalary), netSalarySelf: Math.round(netSelf), netSalarySpouse: Math.round(netSpouse), pension: Math.round(pension),
         benefit: Math.round(benefit), leaveBenefit: Math.round(leaveBen), householdBenefit: Math.round(householdBen), eduSubsidy: Math.round(eduSubsidy),
         severance: Math.round(severance),
         inhIncome: Math.round(inhIncome), inhAsset: Math.round(reAdd),
@@ -3027,6 +3035,74 @@ window.checkAppUpdate = function(cb){
   }
   function lpLegend(series){ return '<div class="legend" style="flex-wrap:wrap">'+series.map(function(s){ return '<span><span style="display:inline-block;width:14px;height:3px;background:'+s.color+'"></span>'+s.label+'</span>'; }).join("")+'</div>'; }
 
+  // ===== 詳細グラフ（積み上げ収支バー＋資産/実質/純収支ライン・横スクロール） =====
+  var lpDetView = { income:true, expense:true, asset:true, real:true, netcf:false };
+  window.lpDetToggle = function(k){ lpDetView[k]=!lpDetView[k]; renderDashboard(); };
+  function lpDetailCard(rows, base, infl, retAge, longevityAge){
+    if(!rows.length) return "";
+    var INC=[
+      {key:"self",label:"本人給与",color:"#16a34a",val:function(r){return r.netSalarySelf||0;}},
+      {key:"spouse",label:"配偶者給与",color:"#4ade80",val:function(r){return r.netSalarySpouse||0;}},
+      {key:"pen",label:"年金",color:"#f59e0b",val:function(r){return r.pension||0;}},
+      {key:"inv",label:"運用益",color:"#8b5cf6",val:function(r){return r.investReturn||0;}},
+      {key:"oth",label:"その他収入",color:"#9ca3af",val:function(r){return Math.max(0,(r.totalIncome||0)-(r.netSalary||0)-(r.pension||0));}}
+    ];
+    var EXP=[
+      {key:"liv",label:"生活費",color:"#ef4444",val:function(r){return r.living||0;}},
+      {key:"hou",label:"住居費",color:"#f97316",val:function(r){return r.housing||0;}},
+      {key:"edu",label:"教育費",color:"#eab308",val:function(r){return r.education||0;}},
+      {key:"big",label:"大型イベント",color:"#ec4899",val:function(r){return r.bigExpense||0;}},
+      {key:"oth",label:"その他支出",color:"#9ca3af",val:function(r){return Math.max(0,(r.totalExpense||0)-(r.living||0)-(r.housing||0)-(r.education||0)-(r.bigExpense||0));}}
+    ];
+    var n=rows.length;
+    var col=Math.max(15, Math.min(26, Math.round(760/n)));
+    var W=Math.max(660, n*col), H=380, pT=18, pB=44, pL=8, pR=8, plotH=H-pT-pB;
+    var maxAsset=1; rows.forEach(function(r){ maxAsset=Math.max(maxAsset,r.balance,r.balance/Math.pow(1+infl,r.year-base)); });
+    var maxInc=1, maxExp=1;
+    rows.forEach(function(r){ maxInc=Math.max(maxInc,INC.reduce(function(s,c){return s+c.val(r);},0)); maxExp=Math.max(maxExp,EXP.reduce(function(s,c){return s+c.val(r);},0)); });
+    function xAt(i){ return pL+col*i+col*0.5; }
+    function yA(v){ return (H-pB)-plotH*(Math.max(0,v)/maxAsset); }
+    var yF0=pT+plotH*0.66, upSpace=yF0-(pT+plotH*0.06), downSpace=(H-pB)-yF0;
+    var flowUnit=Math.min(upSpace/maxInc, downSpace/maxExp);
+    var grid="";
+    for(var g=0;g<=4;g++){ var v=maxAsset*g/4, gy=yA(v); grid+='<line x1="'+pL+'" y1="'+gy+'" x2="'+(W-pR)+'" y2="'+gy+'" stroke="#f1f1f3"/><text x="'+(pL+2)+'" y="'+(gy-3)+'" font-size="9" fill="#a1a1aa">'+window.yenShort(v)+'</text>'; }
+    grid+='<line x1="'+pL+'" y1="'+yF0+'" x2="'+(W-pR)+'" y2="'+yF0+'" stroke="#9a9aa2" stroke-dasharray="3 3"/><text x="'+(W-pR-2)+'" y="'+(yF0-3)+'" text-anchor="end" font-size="9" fill="#9a9aa2">収支0</text>';
+    var bars="", bw=col*0.62;
+    rows.forEach(function(r,i){ var x0=xAt(i)-bw/2;
+      if(lpDetView.income){ var yt=yF0; INC.forEach(function(c){ var h=c.val(r)*flowUnit; if(h>0.4){ bars+='<rect x="'+x0.toFixed(1)+'" y="'+(yt-h).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+h.toFixed(1)+'" fill="'+c.color+'"/>'; yt-=h; } }); }
+      if(lpDetView.expense){ var yb=yF0; EXP.forEach(function(c){ var h=c.val(r)*flowUnit; if(h>0.4){ bars+='<rect x="'+x0.toFixed(1)+'" y="'+yb.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+h.toFixed(1)+'" fill="'+c.color+'"/>'; yb+=h; } }); }
+    });
+    function poly(vals,color,dash){ return '<polyline points="'+vals.map(function(v,i){return xAt(i).toFixed(1)+","+v.toFixed(1);}).join(" ")+'" fill="none" stroke="'+color+'" stroke-width="2"'+(dash?' stroke-dasharray="5 3"':'')+'/>'; }
+    var lines="";
+    if(lpDetView.asset) lines+=poly(rows.map(function(r){return yA(r.balance);}),"#2563eb",false);
+    if(lpDetView.real) lines+=poly(rows.map(function(r){return yA(r.balance/Math.pow(1+infl,r.year-base));}),"#2563eb",true);
+    if(lpDetView.netcf) lines+=poly(rows.map(function(r){ return Math.max(pT,Math.min(H-pB, yF0-(r.netCashflow||0)*flowUnit)); }),"#18181b",false);
+    var xl=""; rows.forEach(function(r,i){ if(r.year%5===0){ xl+='<text x="'+xAt(i).toFixed(1)+'" y="'+(H-26)+'" text-anchor="middle" font-size="9" fill="#a1a1aa">'+r.year+'</text><text x="'+xAt(i).toFixed(1)+'" y="'+(H-14)+'" text-anchor="middle" font-size="9" fill="#c4c4c8">'+r.ageSelf+'</text>'; } });
+    var svg='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" style="display:block">'+grid+bars+lines+xl+'</svg>';
+    // サマリー指標
+    var minBal=Math.min.apply(null, rows.map(function(r){return r.balance;}));
+    var retRow=rows.find(function(r){return r.ageSelf>=(retAge||65);}); var retBal=retRow?retRow.balance:rows[rows.length-1].balance;
+    var srI=0,srN=0; rows.slice(0,5).forEach(function(r){ var inc=(r.totalIncome||0)+(r.investReturn||0); srI+=inc; srN+=inc-(r.totalExpense||0); }); var srate=srI>0?Math.round(srN/srI*100):0;
+    var chips='<div class="det-chips">'
+      +'<div><div class="dc-l">退職時の資産</div><div class="dc-v num">'+yenU(retBal)+'</div></div>'
+      +'<div><div class="dc-l">いちばん少ない資産</div><div class="dc-v num" style="color:'+(minBal<0?"var(--down)":"var(--ink)")+'">'+yenU(minBal)+'</div></div>'
+      +'<div><div class="dc-l">資金ショート</div><div class="dc-v num" style="color:'+(longevityAge!=null?"var(--down)":"var(--up)")+'">'+(longevityAge!=null?longevityAge+"歳〜":"なし")+'</div></div>'
+      +'<div><div class="dc-l">貯蓄率（直近5年）</div><div class="dc-v num">'+srate+'%</div></div>'
+      +'</div>';
+    function tg(k,label){ return '<button type="button" class="det-tg'+(lpDetView[k]?" on":"")+'" onclick="lpDetToggle(\''+k+'\')">'+label+'</button>'; }
+    var toggles='<div class="det-tgs">'+tg("income","収入")+tg("expense","支出")+tg("asset","資産合計")+tg("real","実質")+tg("netcf","純収支")+'</div>';
+    var leg='<div class="legend" style="flex-wrap:wrap;margin-top:10px">'
+      +INC.concat(EXP).map(function(c){ return '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+c.color+'"></span>'+c.label+'</span>'; }).join("")
+      +'<span><span style="display:inline-block;width:14px;height:3px;background:#2563eb"></span>資産合計</span>'
+      +'<span><span style="display:inline-block;width:14px;height:0;border-top:2px dashed #2563eb"></span>実質</span></div>';
+    return '<div class="card"><div class="section-title">詳細グラフ（収支の内訳と資産）</div>'
+      +chips+toggles
+      +'<div class="lp-note" style="margin:2px 0 6px">← 横にスクロールできます。0線より上が収入、下が支出の内訳。青ラインが資産合計、破線が実質（今のお金換算）。</div>'
+      +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line-soft);border-radius:12px">'+svg+'</div>'
+      +leg
+      +'<div class="lp-note">給与は手取り（税・社会保険料を差し引き後）です。そのため所得税・住民税・社会保険料は支出の内訳には出ません。</div></div>';
+  }
+
   function eduPerChild(baseYear,endYear){
     return lp.profile.children.map(function(c){
       var total=0;
@@ -3290,7 +3366,8 @@ window.checkAppUpdate = function(cb){
       +'・<b>教育費</b>：文科省「子供の学習費調査」ベースの概算。高校無償化は就学支援金として収入計上（設定で切替）。<br>'
       +'・相続税や各種特例などの個別事情は簡略化しています。数値はすべて概算・目安です。'
       +'</div></details></div>';
-    host.innerHTML=headHtml+mainChart+assumpHtml+basisHtml+compHtml+swrHtml+fundsHtml+returnHtml+inflHtml+inflDefHtml+empHtml+penHtml+estCardHtml+inhHtml+beqHtml+'<div class="lp-note">すべて概算・目安です。正確な数値は専門家にご確認ください。</div>';
+    var detailHtml=lpDetailCard(head.rows, base, vInfl, viewOpts.retireAgeSelf, head.summary.longevityAge);
+    host.innerHTML=headHtml+mainChart+detailHtml+assumpHtml+basisHtml+compHtml+swrHtml+fundsHtml+returnHtml+inflHtml+inflDefHtml+empHtml+penHtml+estCardHtml+inhHtml+beqHtml+'<div class="lp-note">すべて概算・目安です。正確な数値は専門家にご確認ください。</div>';
   }
   window.renderDashboard=renderDashboard;
   window.lpVO=function(key,val){ viewOpts[key]=Number(val); var l=document.getElementById("lpVO_"+key); if(l)l.textContent=(key==="inflationRate"?val+"%":val+"歳"); renderDashboard(); };
