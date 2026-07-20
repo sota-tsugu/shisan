@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260720063942";
+window.APP_VERSION = "20260720065147";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -90,6 +90,10 @@ window.checkAppUpdate = function(cb){
   .net-sub > div { font-size:12px; color:var(--ink-2); }
   .net-sub b { display:block; font-size:15px; font-weight:600; color:var(--ink); margin-top:3px; }
   .net-sub .debt-v { color:var(--down); }
+  .breakdown.ra .b-amount { text-align:right; }
+  .net-sub.ra { flex-direction:column; gap:5px; margin-top:9px; }
+  .net-sub.ra > div { display:flex; justify-content:space-between; align-items:baseline; }
+  .net-sub.ra > div b { display:inline; margin-top:0; }
 
   .stack { display:flex; height:12px; border-radius:999px; overflow:hidden; background:var(--line-soft); margin:4px 0 12px; }
   .stack-legend { display:flex; justify-content:space-between; font-size:12px; color:var(--ink-2); }
@@ -302,7 +306,7 @@ window.checkAppUpdate = function(cb){
         <div class="total-label">総資産</div>
         <div class="total-amount num" id="homeTotal">¥0</div>
         <div id="homeDelta"></div>
-        <div class="breakdown">
+        <div class="breakdown ra">
           <div>
             <div class="b-row"><span class="b-mark" style="background:#18181b"></span><span class="b-label">現預金</span></div>
             <div class="b-amount num" id="homeCash">¥0</div>
@@ -317,7 +321,7 @@ window.checkAppUpdate = function(cb){
       <div class="card">
         <div class="section-title">純資産（資産 − 負債）</div>
         <div class="net-amount num" id="homeNet">¥0</div>
-        <div class="net-sub">
+        <div class="net-sub ra">
           <div>総資産<b class="num" id="homeAssets">¥0</b></div>
           <div>負債<b class="num debt-v" id="homeDebt">¥0</b></div>
         </div>
@@ -1837,13 +1841,27 @@ window.checkAppUpdate = function(cb){
     const past = history.filter(h => h.ym < curYm).sort((a,b)=>a.ym.localeCompare(b.ym));
     return past.length ? past[past.length-1] : null;
   }
+  function yearAgoRef() { // 前年同月（なければ±3ヶ月以内で最も近い記録）
+    if (!history.length) return null;
+    const now = new Date();
+    const targetYm = (now.getFullYear()-1) + "-" + String(now.getMonth()+1).padStart(2,"0");
+    let best = null, bestDist = Infinity;
+    history.forEach(h => { const dist = Math.abs(monthsBetween(h.ym, targetYm)); if (dist < bestDist) { bestDist = dist; best = h; } });
+    return (best && bestDist <= 3) ? best : null;
+  }
+  function deltaLine(label, ref) {
+    if (!ref) return "";
+    const d = currentTotals().total - ref.total;
+    if (d === 0) return `<span class="delta flat">${label} 変化なし</span>`;
+    const up = d > 0, pct = ref.total ? Math.abs(d/ref.total*100).toFixed(1) : "—";
+    return `<span class="delta ${up?'up':'down'}">${up?ICON_UP:ICON_DOWN}${up?'+':'−'}${yen(Math.abs(d))}　${label} ${pct}%</span>`;
+  }
   function deltaHtml() {
     const ref = prevMonthRef();
-    if (!ref) return '<span class="delta flat">前月の記録があると増減を表示します</span>';
-    const d = currentTotals().total - ref.total;
-    if (d === 0) return '<span class="delta flat">前月から変化なし</span>';
-    const up = d > 0, pct = ref.total ? Math.abs(d/ref.total*100).toFixed(1) : "—";
-    return `<span class="delta ${up?'up':'down'}">${up?ICON_UP:ICON_DOWN}${up?'+':'−'}${yen(Math.abs(d))}　前月比 ${pct}%</span>`;
+    let html = ref ? deltaLine("前月比", ref) : '<span class="delta flat">前月の記録があると増減を表示します</span>';
+    const yref = yearAgoRef();
+    if (yref) html += '<div style="margin-top:5px">' + deltaLine("前年同月比", yref) + '</div>';
+    return html;
   }
 
   function renderHome() {
