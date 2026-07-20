@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260720054319";
+window.APP_VERSION = "20260720063209";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -121,6 +121,9 @@ window.checkAppUpdate = function(cb){
   .lpq-center { position:absolute; top:50%; left:0; right:0; transform:translateY(-50%); height:2px; background:rgba(0,0,0,0.12); border-radius:1px; pointer-events:none; z-index:2; }
   .ms-slide-ic { flex:0 0 22px; text-align:center; font-size:12px; font-weight:600; color:var(--muted); }
   .ms-scale { display:flex; justify-content:space-between; margin:3px 0 0 32px; font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .est-tag { display:inline-block; font-size:11px; font-weight:600; border-radius:999px; padding:2px 9px; margin-left:6px; }
+  .est-tag.self { color:#18181b; background:var(--fill-soft); border:1px solid var(--line); }
+  .est-tag.spouse { color:#047857; background:var(--up-soft); border:1px solid #bbf7d0; }
   /* カスタム・チェックボックス（チェックで塗り＋白✓） */
   .chk { -webkit-appearance:none; appearance:none; width:22px; height:22px; min-width:22px; margin:0; padding:0; border:1.5px solid var(--line); border-radius:7px; background:#fff; cursor:pointer; position:relative; flex:0 0 auto; vertical-align:middle; transition:background .15s ease, border-color .15s ease, transform .1s ease; }
   .chk:hover { border-color:var(--ink-2); }
@@ -838,6 +841,70 @@ window.checkAppUpdate = function(cb){
     return Math.round(base * pensionAdjustFactor(startAge != null ? startAge : plan.startAge));
   }
 
+  /* ===== 相続（遺産・相続税・不動産）簡易計算 ===== */
+  var ESTATE = {
+    valFactor:   { mansion: 0.60, house: 0.70, land: 0.80 }, // 時価→相続税評価額の目安
+    landPortion: { mansion: 0.40, house: 0.60, land: 1.00 }, // 小規模宅地特例の対象（土地）割合
+    smallScaleCut: 0.80,                                     // 居住用宅地の減額率（最大80%）
+    defaultCost: {
+      mansion: { mgmtMonthly: 15000, repairMonthly: 12000, propertyTaxAnnual: 100000, maintenanceAnnual: 0,      renovAmount: 2000000, renovEvery: 15 },
+      house:   { mgmtMonthly: 0,     repairMonthly: 0,     propertyTaxAnnual: 120000, maintenanceAnnual: 100000, renovAmount: 2500000, renovEvery: 15 },
+      land:    { mgmtMonthly: 0,     repairMonthly: 0,     propertyTaxAnnual: 50000,  maintenanceAnnual: 0,      renovAmount: 0,       renovEvery: 0  }
+    }
+  };
+  function reMarketValue(re) { // 時価（資産計上に使う実勢価格）
+    if (!re) return 0;
+    if (re.valMode === "appraised") { var f = ESTATE.valFactor[re.kind] || 0.7; return Math.round((re.appraisedValue || 0) / f); }
+    return re.marketValue || 0;
+  }
+  function reAppraisedValue(re) { // 相続税評価額（特例適用後）
+    if (!re) return 0;
+    var base = (re.valMode === "appraised") ? (re.appraisedValue || 0) : (re.marketValue || 0) * (ESTATE.valFactor[re.kind] || 0.7);
+    if (re.smallScale) base = base * (1 - ESTATE.smallScaleCut * (ESTATE.landPortion[re.kind] || 0));
+    return Math.round(base);
+  }
+  function reAnnualCost(re) { // 相続後に継続してかかる年間費用
+    if (!re) return 0;
+    var d = ESTATE.defaultCost[re.kind] || ESTATE.defaultCost.house;
+    var mg = (re.mgmtMonthly != null ? re.mgmtMonthly : d.mgmtMonthly);
+    var rp = (re.repairMonthly != null ? re.repairMonthly : d.repairMonthly);
+    var pt = (re.propertyTaxAnnual != null ? re.propertyTaxAnnual : d.propertyTaxAnnual);
+    var mt = (re.maintenanceAnnual != null ? re.maintenanceAnnual : d.maintenanceAnnual);
+    return (mg + rp) * 12 + pt + mt;
+  }
+  function inhTaxByBracket(x) { // 相続税の速算表
+    var t = [[10000000,0.10,0],[30000000,0.15,500000],[50000000,0.20,2000000],[100000000,0.30,7000000],[200000000,0.40,17000000],[300000000,0.45,27000000],[600000000,0.50,42000000],[Infinity,0.55,72000000]];
+    for (var i=0;i<t.length;i++){ if (x <= t[i][0]) return x*t[i][1]-t[i][2]; }
+    return 0;
+  }
+  function estateSummary(c) { // 1ケースぶんの遺産・相続税サマリー
+    c = c || {};
+    var res = (c.realEstates || []);
+    var reMarket = res.reduce(function(s,re){return s+reMarketValue(re);},0);
+    var reAppr   = res.reduce(function(s,re){return s+reAppraisedValue(re);},0);
+    var liquid = (c.cash || 0) + (c.securities || 0);
+    var taxable = liquid + reAppr;                          // 課税価格（概算）
+    var heirs = Math.max(1, c.heirs || 1);
+    var basic = 30000000 + 6000000 * heirs;                // 基礎控除
+    var net = Math.max(0, taxable - basic);                 // 課税遺産総額
+    var shares = [];
+    if (c.spouseAlive && heirs >= 2) { shares.push(0.5); var kids = heirs - 1; for (var i=0;i<kids;i++) shares.push(0.5/kids); }
+    else if (c.spouseAlive && heirs === 1) { shares.push(1); }
+    else { for (var j=0;j<heirs;j++) shares.push(1/heirs); }
+    var totalTax = (net <= 0) ? 0 : Math.round(shares.reduce(function(s,sh){return s+inhTaxByBracket(net*sh);},0));
+    var sharePct = (c.sharePct != null ? c.sharePct : 100) / 100;
+    var selfTax = Math.round(totalTax * sharePct);
+    if (c.asSpouse) selfTax = 0;                            // 配偶者の税額軽減（1.6億以内想定で概ね0）
+    var annualCost = res.reduce(function(s,re){return s+reAnnualCost(re);},0);
+    return {
+      reMarket: reMarket, reAppraised: reAppr, liquid: liquid, taxable: taxable,
+      basicDeduction: basic, net: net, totalTax: totalTax, selfTax: selfTax,
+      acquire: Math.round((liquid + reMarket) * sharePct),  // 本人が取得する時価ベースの額
+      selfLiquid: Math.round(liquid * sharePct), selfReMarket: Math.round(reMarket * sharePct),
+      annualCost: annualCost, realEstates: res
+    };
+  }
+
   /* ===== 育休給付（年次・概算） ===== */
   function leaveBenefitForYear(ev, base, year, ctx) {
     if (!ev.benefits || !ev.benefits.parentalLeaveAllowance) return 0;
@@ -1110,6 +1177,11 @@ window.checkAppUpdate = function(cb){
         var g = inh.gifting || {};
         if ((g.annualAmount || 0) > 0 && g.startYear && g.endYear && year >= g.startYear && year <= g.endYear) inhIncome += g.annualAmount;
         (g.special || []).forEach(function (sp) { if (year === sp.year) inhIncome += sp.amount || 0; });
+        // 遺産・相続税シミュレーション（複数ケース：本人の親／配偶者の親など）
+        (inh.estates || []).forEach(function (ec) {
+          if (!ec || !ec.enabled) return;
+          if (year === ec.year) { var es = estateSummary(ec); inhIncome += es.selfLiquid; reAdd += es.selfReMarket; }
+        });
       }
       // 死亡保険金：本人の死亡翌年、配偶者が存命なら遺された側の資産に加算
       var lifeInsurance = 0;
@@ -1197,6 +1269,23 @@ window.checkAppUpdate = function(cb){
         });
       }
       var totalExpense = living + hc.total + education + bigExpense;
+      // 相続：相続税（現金支出・その年）＋不動産の継続費用（相続後・インフレ適用）＋将来のリフォーム
+      if (opt.applyInheritance !== false && inputs.inheritance && inputs.inheritance.estates) {
+        inputs.inheritance.estates.forEach(function (ec) {
+          if (!ec || !ec.enabled) return;
+          var sharePct = (ec.sharePct != null ? ec.sharePct : 100) / 100;
+          if (year === ec.year) totalExpense += estateSummary(ec).selfTax; // 相続税は本人負担ぶんを現金で
+          if (year >= ec.year) {
+            (ec.realEstates || []).forEach(function (re) {
+              totalExpense += reAnnualCost(re) * sharePct * inflMul; // 維持費・管理費・固定資産税など（持分ぶん）
+              var d = ESTATE.defaultCost[re.kind] || ESTATE.defaultCost.house;
+              var rvAmt = (re.renovAmount != null ? re.renovAmount : d.renovAmount);
+              var rvEvery = (re.renovEvery != null ? re.renovEvery : d.renovEvery);
+              if (rvEvery > 0 && rvAmt > 0 && (year - ec.year) > 0 && (year - ec.year) % rvEvery === 0) totalExpense += rvAmt * sharePct * inflMul;
+            });
+          }
+        });
+      }
 
       // --- 運用益（投資区分にのみ・名目） ---
       var investReturn = buckets.securities * (bothRetired ? retRateRet : retRateAcc);
@@ -1398,13 +1487,15 @@ window.checkAppUpdate = function(cb){
     compareEmployment: compareEmployment,
     comparePensionStart: comparePensionStart,
     compareInheritance: compareInheritance,
+    estateSummary: estateSummary,
     estimateBequest: estimateBequest,
     estimateHousingByRegion: estimateHousingByRegion,
     // 補助（テスト・UIから利用可）
     _helpers: {
       grossToNet: grossToNet, mortgageAnnualPayment: mortgageAnnualPayment,
       pensionAdjustFactor: pensionAdjustFactor, annualPensionFor: annualPensionFor,
-      educationExpenseForYear: educationExpenseForYear, educationBreakdown: educationBreakdown, estimatePensionAnnual: estimatePensionAnnual, DEFAULTS: DEFAULTS
+      educationExpenseForYear: educationExpenseForYear, educationBreakdown: educationBreakdown, estimatePensionAnnual: estimatePensionAnnual,
+      reMarketValue: reMarketValue, reAppraisedValue: reAppraisedValue, reAnnualCost: reAnnualCost, DEFAULTS: DEFAULTS
     }
   };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
@@ -2173,6 +2264,7 @@ window.checkAppUpdate = function(cb){
   var lp; try{ lp = JSON.parse(localStorage.getItem(LP_KEY)) || def(); }catch(e){ lp = def(); }
   if(typeof lp.step!=="number") lp.step=0;
   if(!lp.inheritance) lp.inheritance={ receive:[], gifting:{ annualAmount:0, startYear:0, endYear:0, special:[] }, bequest:{ lifeInsurance:0 } };
+  if(!lp.inheritance.estates) lp.inheritance.estates=[];
   if(!lp.finance.regularInvestment) lp.finance.regularInvestment={ annualAmount:0, startYear:nowY, years:0 };
   if(lp.finance.retirementReturnRate==null) lp.finance.retirementReturnRate=3;
   lp.finance.withdrawalOrder=["securities","realEstate","other","cash"]; // 現金は最後に取り崩す（生活防衛資金）
@@ -2282,6 +2374,40 @@ window.checkAppUpdate = function(cb){
   window.lpInhDelSpecial=function(id){ lp.inheritance.gifting.special=lp.inheritance.gifting.special.filter(function(s){return s.id!==id;}); save(); renderStep(); };
   window.lpInhSpecial=function(id,field,val){ var s=lp.inheritance.gifting.special.find(function(x){return x.id===id;}); if(!s)return; if(field==="year")s.year=Number(val)||nowY; else s.amount=Number(window.toHankaku(val).replace(/[^0-9.]/g,""))||0; save(); };
   window.lpInhBequest=function(val){ lp.inheritance.bequest.lifeInsurance=Number(window.toHankaku(val).replace(/[^0-9.]/g,""))||0; save(); };
+
+  // ===== 遺産・相続税シミュレーション（複数ケース） =====
+  function newEstateRe(kind){ var d={mansion:{mgmtMonthly:15000,repairMonthly:12000,propertyTaxAnnual:100000,maintenanceAnnual:0,renovAmount:2000000,renovEvery:15},house:{mgmtMonthly:0,repairMonthly:0,propertyTaxAnnual:120000,maintenanceAnnual:100000,renovAmount:2500000,renovEvery:15},land:{mgmtMonthly:0,repairMonthly:0,propertyTaxAnnual:50000,maintenanceAnnual:0,renovAmount:0,renovEvery:0}}[kind]; return Object.assign({id:"re"+Date.now()+Math.floor(Math.random()*1000),kind:kind,valMode:"market",marketValue:0,appraisedValue:0,smallScale:(kind!=="land")},d); }
+  var estNum=function(v){ return Number(window.toHankaku(String(v)).replace(/[^0-9.]/g,""))||0; };
+  window.lpEstAdd=function(from){ from=from||"self_parent"; var rel=(from==="spouse_parent")?"義父":"父"; lp.inheritance.estates.push({ id:"e"+Date.now(), from:from, rel:rel, label:rel, enabled:true, year:nowY+15, heirs:2, spouseAlive:true, sharePct:50, asSpouse:false, cash:0, securities:0, realEstates:[] }); save(); renderStep(); };
+  window.lpEstDel=function(id){ lp.inheritance.estates=lp.inheritance.estates.filter(function(e){return e.id!==id;}); save(); renderStep(); };
+  window.lpEstSet=function(id,field,val,reRender){ var e=lp.inheritance.estates.find(function(x){return x.id===id;}); if(!e)return;
+    if(field==="enabled"||field==="spouseAlive"||field==="asSpouse") e[field]=!!val;
+    else if(field==="from"){ e.from=val; e.rel=(val==="spouse_parent")?"義父":"父"; e.label=e.rel; }
+    else if(field==="label") e.label=val;
+    else if(field==="cash"||field==="securities") e[field]=estNum(val);
+    else e[field]=Number(val)||0;
+    save(); if(reRender) renderStep(); };
+  window.lpEstRel=function(id,val){ var e=lp.inheritance.estates.find(function(x){return x.id===id;}); if(!e)return; e.rel=val;
+    if(val!=="その他") e.label=val;
+    else if(["父","母","祖父","祖母","義父","義母","義祖父","義祖母"].indexOf(e.label)>=0) e.label="";
+    save(); renderStep(); };
+  window.lpEstRerender=function(){ renderStep(); };
+  window.lpEstAmt=function(el,id,field,yid){ var d=window.toHankaku(el.value).replace(/[^0-9]/g,""); el.value=d?Number(d).toLocaleString("ja-JP"):""; var e=lp.inheritance.estates.find(function(x){return x.id===id;}); if(e){ e[field]=Number(d)||0; save(); } var y=document.getElementById(yid); if(y)y.textContent=d?("＝ "+window.manYomi(Number(d))):""; };
+  window.lpEstReAmt=function(el,cid,rid,field,yid){ var d=window.toHankaku(el.value).replace(/[^0-9]/g,""); el.value=d?Number(d).toLocaleString("ja-JP"):""; var e=lp.inheritance.estates.find(function(x){return x.id===cid;}); if(e){ var re=e.realEstates.find(function(r){return r.id===rid;}); if(re){ re[field]=Number(d)||0; save(); } } var y=document.getElementById(yid); if(y)y.textContent=d?("＝ "+window.manYomi(Number(d))):""; };
+  window.lpEstAutoShare=function(id){ var e=lp.inheritance.estates.find(function(x){return x.id===id;}); if(!e)return;
+    var heirs=Math.max(1,e.heirs||1), pct;
+    if(e.asSpouse){ pct=(heirs>1)?50:100; }
+    else { var kids=e.spouseAlive?(heirs-1):heirs; if(kids<=0) pct=100; else pct=Math.round((e.spouseAlive?0.5:1)/kids*100); }
+    e.sharePct=pct; save(); renderStep(); };
+  window.lpEstReAdd=function(cid,kind){ var e=lp.inheritance.estates.find(function(x){return x.id===cid;}); if(!e)return; e.realEstates.push(newEstateRe(kind||"mansion")); save(); renderStep(); };
+  window.lpEstReDel=function(cid,rid){ var e=lp.inheritance.estates.find(function(x){return x.id===cid;}); if(!e)return; e.realEstates=e.realEstates.filter(function(r){return r.id!==rid;}); save(); renderStep(); };
+  window.lpEstReSet=function(cid,rid,field,val,reRender){ var e=lp.inheritance.estates.find(function(x){return x.id===cid;}); if(!e)return; var re=e.realEstates.find(function(r){return r.id===rid;}); if(!re)return;
+    if(field==="smallScale") re.smallScale=!!val;
+    else if(field==="kind"){ re.kind=val; var nd=newEstateRe(val); re.mgmtMonthly=nd.mgmtMonthly; re.repairMonthly=nd.repairMonthly; re.propertyTaxAnnual=nd.propertyTaxAnnual; re.maintenanceAnnual=nd.maintenanceAnnual; re.renovAmount=nd.renovAmount; re.renovEvery=nd.renovEvery; }
+    else if(field==="valMode") re.valMode=val;
+    else if(field==="marketValue"||field==="appraisedValue"||field==="renovAmount"||field==="mgmtMonthly"||field==="repairMonthly"||field==="propertyTaxAnnual"||field==="maintenanceAnnual") re[field]=estNum(val);
+    else re[field]=Number(val)||0;
+    save(); if(reRender) renderStep(); };
 
   window.lpToggleInfl=function(rate){
     var arr=lp.simSettings.inflationRates; var i=arr.indexOf(rate);
@@ -2702,6 +2828,64 @@ window.checkAppUpdate = function(cb){
       + stepInheritance();
   }
 
+  function estateCasesUI(){
+    var KIND={mansion:"マンション",house:"一戸建て",land:"土地"};
+    var H=window.LifeSim._helpers;
+    var by=parseInt((lp.profile.self.birthYearMonth||"").slice(0,4))||null;
+    function opt(map,val){ return Object.keys(map).map(function(k){return '<option value="'+k+'"'+(k===val?" selected":"")+'>'+map[k]+'</option>';}).join(""); }
+    function amtCase(id,f,v,ph){ var yid="ye_"+id+"_"+f; return '<input type="text" inputmode="numeric" value="'+(v?Number(v).toLocaleString("ja-JP"):"")+'" placeholder="'+(ph||"例：10,000,000")+'" oninput="lpEstAmt(this,\''+id+'\',\''+f+'\',\''+yid+'\')" onchange="lpEstRerender()"><div class="yomi" id="'+yid+'">'+(v?("＝ "+window.manYomi(Number(v))):"")+'</div>'; }
+    function amtRe(cid,rid,f,v,ph){ var yid="yr_"+rid+"_"+f; return '<input type="text" inputmode="numeric" value="'+(v?Number(v).toLocaleString("ja-JP"):"")+'" placeholder="'+(ph||"例：100,000")+'" oninput="lpEstReAmt(this,\''+cid+'\',\''+rid+'\',\''+f+'\',\''+yid+'\')" onchange="lpEstRerender()"><div class="yomi" id="'+yid+'">'+(v?("＝ "+window.manYomi(Number(v))):"")+'</div>'; }
+    function relOptions(from,cur){ var list=(from==="spouse_parent")?["義父","義母","義祖父","義祖母","その他"]:["父","母","祖父","祖母","その他"]; var v=(list.indexOf(cur)>=0)?cur:"その他"; return list.map(function(r){return '<option value="'+r+'"'+(r===v?" selected":"")+'>'+r+'</option>';}).join(""); }
+    var cases=lp.inheritance.estates.map(function(e){
+      var s=window.LifeSim.estateSummary(e);
+      var ageAt=(by!=null)?(e.year-by):null;
+      var fromLabel=e.from==="spouse_parent"?"配偶者の親":"本人の親";
+      var reHtml=(e.realEstates||[]).map(function(re){
+        var valField=re.valMode==="market"
+          ? field("市場価格（時価・売ったらいくら）",amtRe(e.id,re.id,"marketValue",re.marketValue,"例：30,000,000"))
+          : field("相続税評価額（分かる場合）",amtRe(e.id,re.id,"appraisedValue",re.appraisedValue,"例：18,000,000"));
+        return '<div class="lp-event" style="background:#fff">'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:13px">'+KIND[re.kind]+'</b><button class="del" onclick="lpEstReDel(\''+e.id+'\',\''+re.id+'\')">削除</button></div>'
+          +'<div class="lp-row"><div>'+field("種類",'<select onchange="lpEstReSet(\''+e.id+'\',\''+re.id+'\',\'kind\',this.value,true)">'+opt(KIND,re.kind)+'</select>')+'</div><div>'+field("評価方法",'<select onchange="lpEstReSet(\''+e.id+'\',\''+re.id+'\',\'valMode\',this.value,true)"><option value="market"'+(re.valMode==="market"?" selected":"")+'>時価から概算</option><option value="appraised"'+(re.valMode==="appraised"?" selected":"")+'>評価額を直接</option></select>')+'</div></div>'
+          +valField
+          +(re.kind==="land"?'':'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0"><input type="checkbox" class="chk" '+(re.smallScale?"checked":"")+' onchange="lpEstReSet(\''+e.id+'\',\''+re.id+'\',\'smallScale\',this.checked,true)"> 居住用宅地の特例（小規模宅地等・評価減）を使う</label>')
+          +'<div class="lp-note" style="margin-top:2px">相続税評価額の目安 <b>'+yen(H.reAppraisedValue(re))+'</b> ／ 年間の継続費用 目安 <b>'+yen(H.reAnnualCost(re))+'</b></div>'
+          +'<details style="margin-top:6px"><summary style="font-size:13px;color:var(--ink-2);cursor:pointer">継続費用の内訳（編集可）</summary>'
+          +'<div class="lp-row"><div>'+field("管理費（月）",amtRe(e.id,re.id,"mgmtMonthly",re.mgmtMonthly,"例：15,000"))+'</div><div>'+field("修繕積立金（月）",amtRe(e.id,re.id,"repairMonthly",re.repairMonthly,"例：12,000"))+'</div></div>'
+          +'<div class="lp-row"><div>'+field("固定資産税（年）",amtRe(e.id,re.id,"propertyTaxAnnual",re.propertyTaxAnnual,"例：100,000"))+'</div><div>'+field("その他維持費（年）",amtRe(e.id,re.id,"maintenanceAnnual",re.maintenanceAnnual,"例：0"))+'</div></div>'
+          +'<div class="lp-row"><div>'+field("リフォーム/大規模修繕（円）",amtRe(e.id,re.id,"renovAmount",re.renovAmount,"例：2,000,000"))+'</div><div>'+field("その周期（年ごと）",'<input type="number" value="'+(re.renovEvery||0)+'" onchange="lpEstReSet(\''+e.id+'\',\''+re.id+'\',\'renovEvery\',this.value,true)">')+'</div></div>'
+          +'</details></div>';
+      }).join("");
+      var sideClass=e.from==="spouse_parent"?"spouse":"self";
+      var sideLabel=e.from==="spouse_parent"?"配偶者側":"本人側";
+      var relList=(e.from==="spouse_parent")?["義父","義母","義祖父","義祖母","その他"]:["父","母","祖父","祖母","その他"];
+      var relSel=(relList.indexOf(e.rel||e.label)>=0)?(e.rel||e.label):"その他";
+      var dispName=(relSel!=="その他")?relSel:((e.label&&e.label.trim())?e.label:(fromLabel+"からの相続"));
+      return '<div class="lp-event" style="border-left:3px solid '+(e.from==="spouse_parent"?"#059669":"#18181b")+'">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="min-width:0"><b style="font-size:14px">'+dispName+'</b><span class="est-tag '+sideClass+'">'+sideLabel+'</span></div><button class="del" onclick="lpEstDel(\''+e.id+'\')">削除</button></div>'
+        +'<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:0 0 10px"><input type="checkbox" class="chk" '+(e.enabled?"checked":"")+' onchange="lpEstSet(\''+e.id+'\',\'enabled\',this.checked,true)"> <b>世帯のライフプランに反映する</b></label>'
+        +'<div class="lp-row"><div>'+field("相続元",'<select onchange="lpEstSet(\''+e.id+'\',\'from\',this.value,true)"><option value="self_parent"'+(e.from==="self_parent"?" selected":"")+'>本人の親</option><option value="spouse_parent"'+(e.from==="spouse_parent"?" selected":"")+'>配偶者の親</option></select>')+'</div><div>'+field("続柄",'<select onchange="lpEstRel(\''+e.id+'\',this.value)">'+relList.map(function(r){return '<option value="'+r+'"'+(r===relSel?" selected":"")+'>'+r+'</option>';}).join("")+'</select>')+'</div></div>'
+        +(relSel==="その他"?field("名前（自由記入）",'<input type="text" value="'+(e.label||"").replace(/"/g,"&quot;")+'" placeholder="例：祖父" onchange="lpEstSet(\''+e.id+'\',\'label\',this.value,true)">'):"")
+        +field("相続する年（西暦）",'<input type="number" value="'+e.year+'" onchange="lpEstSet(\''+e.id+'\',\'year\',this.value,true)">')
+        +'<div class="lp-row"><div>'+field("法定相続人の人数",'<input type="number" value="'+e.heirs+'" onchange="lpEstSet(\''+e.id+'\',\'heirs\',this.value,true)">')+'</div><div>'+field("本人（配偶者）の取得割合（％）",'<input type="number" value="'+e.sharePct+'" onchange="lpEstSet(\''+e.id+'\',\'sharePct\',this.value,true)">')+'</div></div>'
+        +'<button class="btn btn-outline" style="padding:9px;margin:-4px 0 6px" onclick="lpEstAutoShare(\''+e.id+'\')">法定相続分で取得割合を自動入力</button>'
+        +'<div class="lp-note" style="margin-top:0">配偶者が存命なら「配偶者1/2・子で残り1/2を等分」、いなければ「子で等分」で計算します。実際は遺産分割協議で自由に決められるので、上書きも可能です。</div>'
+        +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:2px 0 4px"><input type="checkbox" class="chk" '+(e.spouseAlive?"checked":"")+' onchange="lpEstSet(\''+e.id+'\',\'spouseAlive\',this.checked,true)"> 亡くなる方に配偶者が存命（基礎控除・法定相続分に影響）</label>'
+        +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:2px 0 10px"><input type="checkbox" class="chk" '+(e.asSpouse?"checked":"")+' onchange="lpEstSet(\''+e.id+'\',\'asSpouse\',this.checked,true)"> 受け取るのは配偶者本人（配偶者の税額軽減で概ね非課税）</label>'
+        +'<div class="section-title" style="font-size:14px">遺産の内訳</div>'
+        +'<div class="lp-row"><div>'+field("現預金（円）",amtCase(e.id,"cash",e.cash,"例：20,000,000"))+'</div><div>'+field("有価証券（円）",amtCase(e.id,"securities",e.securities,"例：10,000,000"))+'</div></div>'
+        +(reHtml||'')
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px"><button class="btn btn-outline" style="flex:1;min-width:120px;padding:9px" onclick="lpEstReAdd(\''+e.id+'\',\'mansion\')">＋ マンション</button><button class="btn btn-outline" style="flex:1;min-width:120px;padding:9px" onclick="lpEstReAdd(\''+e.id+'\',\'house\')">＋ 一戸建て</button><button class="btn btn-outline" style="flex:1;min-width:120px;padding:9px" onclick="lpEstReAdd(\''+e.id+'\',\'land\')">＋ 土地</button></div>'
+        +'<div class="road-stat"><div><div class="rs-label">相続税評価額 合計</div><div class="rs-value num">'+yen(s.taxable)+'</div></div><div><div class="rs-label">相続税（本人負担）</div><div class="rs-value num">'+yen(s.selfTax)+'</div></div></div>'
+        +'<div class="lp-note">'+(ageAt!=null?'<b>'+e.year+'年（本人'+ageAt+'歳）</b>に、':'')+'本人が取得：現金 <b>'+yen(s.selfLiquid)+'</b> ＋ 不動産（時価）<b>'+yen(s.selfReMarket)+'</b>。相続税の本人負担 <b>'+yen(s.selfTax)+'</b> を現金で支払う想定（基礎控除 '+yen(s.basicDeduction)+'／相続人'+e.heirs+'人）。相続後の不動産 継続費用（本人持分）約 <b>'+yen(Math.round(s.annualCost*(e.sharePct/100)))+'/年</b>。</div>'
+        +'</div>';
+    }).join("");
+    return '<div class="section-title">遺産・相続税シミュレーション（詳細）</div>'
+      +'<div class="lp-note" style="margin:6px 0 12px">親などから受け取る遺産（現預金・有価証券・不動産）を入れると、相続税評価額と相続税の目安を概算し、「世帯に反映」にチェックすると資産寿命・資産推移に反映します。<b>本人の親</b>と<b>配偶者の親</b>を別ケースで登録でき、両方まとめて世帯のライフプランに合算されます。</div>'
+      +(cases||'<div class="empty">まだ相続ケースがありません。</div>')
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"><button class="btn btn-outline" style="flex:1;min-width:150px" onclick="lpEstAdd(\'self_parent\')">＋ 本人の親からの相続</button><button class="btn btn-outline" style="flex:1;min-width:150px" onclick="lpEstAdd(\'spouse_parent\')">＋ 配偶者の親からの相続</button></div>';
+  }
+
   function stepInheritance(){
     var inh=lp.inheritance;
     var rec=inh.receive.map(function(r){
@@ -2717,10 +2901,12 @@ window.checkAppUpdate = function(cb){
       return '<div class="lp-row" style="align-items:flex-end"><div>'+field("年（西暦）",'<input type="number" value="'+(s.year||nowY)+'" onchange="lpInhSpecial(\''+s.id+'\',\'year\',this.value)">')+'</div><div>'+field("金額（円）",'<input type="number" inputmode="numeric" value="'+(s.amount||0)+'" onchange="lpInhSpecial(\''+s.id+'\',\'amount\',this.value)">')+'</div><div style="flex:0 0 auto"><button class="del" onclick="lpInhDelSpecial(\''+s.id+'\')" style="margin-bottom:14px">削除</button></div></div>';
     }).join("");
     return '<div class="card"><details '+detAttr('inheritance','border:none;margin:0')+'><summary>相続・贈与（任意・フェーズ3）</summary>'
-      + '<div class="lp-note" style="margin:8px 0 14px">相続税・贈与税は概算です。小規模宅地等の特例や個別事情は含みません。正確な税額は税理士等にご確認ください。</div>'
-      + '<div class="section-title">受け取る相続（親などから）</div>'
+      + '<div class="lp-note" style="margin:8px 0 14px">相続税・贈与税は概算です。基礎控除・配偶者の税額軽減・小規模宅地等の特例をざっくり反映しますが、二次相続や細かな個別事情は含みません。正確な税額は税理士等にご確認ください。</div>'
+      + estateCasesUI()
+      + '<details style="margin:6px 0 14px"><summary style="font-size:13px;color:var(--muted);cursor:pointer">かんたん版（金額だけ入力・税額の自動計算なし）</summary>'
+      + '<div class="section-title" style="margin-top:10px">受け取る相続（親などから）</div>'
       + (rec||'<div class="empty">登録なし</div>')
-      + '<button class="btn btn-outline" onclick="lpInhAddReceive()" style="margin-bottom:16px">相続の想定を追加</button>'
+      + '<button class="btn btn-outline" onclick="lpInhAddReceive()" style="margin-bottom:16px">相続の想定を追加</button></details>'
       + '<div class="section-title">生前贈与（暦年贈与）</div>'
       + '<div class="lp-row"><div>'+field("毎年の想定額",'<input type="number" inputmode="numeric" value="'+(g.annualAmount||0)+'" onchange="lpInhGift(\'annualAmount\',this.value)">')+'</div></div>'
       + '<div class="lp-row"><div>'+field("開始年",'<input type="number" value="'+(g.startYear||"")+'" placeholder="例：2026" onchange="lpInhGift(\'startYear\',this.value)">')+'</div><div>'+field("終了年",'<input type="number" value="'+(g.endYear||"")+'" placeholder="例：2035" onchange="lpInhGift(\'endYear\',this.value)">')+'</div></div>'
@@ -2961,9 +3147,41 @@ window.checkAppUpdate = function(cb){
     var penTable='<table class="lp-cmp" style="margin-top:8px"><thead><tr><th>開始</th><th>年金/年（世帯）</th><th>資産寿命</th><th>最終資産</th></tr></thead><tbody>'+pen.patterns.map(function(p){return '<tr><td>'+p.startAge+'歳</td><td>'+yenLabel(p.annualPension)+'</td><td>'+fmtAge(p.longevityAge)+'</td><td>'+yenLabel(p.finalBalance)+'</td></tr>';}).join("")+'</tbody></table>';
     var penHtml='<div class="card"><div class="section-title">年金受給開始年齢 比較</div>'+lpChart(penAges,penSeries)+lpLegend(penSeries)+penTable+'</div>';
 
-    // 相続あり／なし比較（相続・贈与が設定されている場合）
+    // 相続シミュレーション（詳細ケース）の結果カード
     var inh=lp.inheritance||{};
-    var hasInh=(inh.receive&&inh.receive.length)||(inh.gifting&&((inh.gifting.annualAmount>0)||(inh.gifting.special&&inh.gifting.special.length)));
+    var estEnabled=(inh.estates||[]).filter(function(e){return e.enabled;});
+    var estCardHtml="";
+    if(estEnabled.length){
+      var byE=parseInt((lp.profile.self.birthYearMonth||"").slice(0,4))||null;
+      var estRows=estEnabled.map(function(e){
+        var s=window.LifeSim.estateSummary(e);
+        var ageAt=byE!=null?(e.year-byE):null;
+        var net=s.selfLiquid+s.selfReMarket-s.selfTax;
+        var annualSelf=Math.round(s.annualCost*((e.sharePct!=null?e.sharePct:100)/100));
+        var fromLabel=e.from==="spouse_parent"?"配偶者の親":"本人の親";
+        var dispName=(e.label&&e.label.trim())?e.label:(fromLabel+"からの相続");
+        var sideClass=e.from==="spouse_parent"?"spouse":"self";
+        var sideLabel=e.from==="spouse_parent"?"配偶者側":"本人側";
+        return '<div style="padding:12px 0 4px;border-top:1px solid var(--line-soft)">'
+          +'<div style="display:flex;justify-content:space-between;align-items:baseline"><div><b>'+dispName+'</b><span class="est-tag '+sideClass+'">'+sideLabel+'</span></div><span class="num" style="font-size:12px;color:var(--muted)">'+e.year+'年'+(ageAt!=null?'・本人'+ageAt+'歳':'')+'</span></div>'
+          +'<table class="lp-cmp" style="margin-top:6px"><tbody>'
+          +'<tr><td>受け取る現金・有価証券</td><td class="num">'+yenLabel(s.selfLiquid)+'</td></tr>'
+          +(s.selfReMarket>0?'<tr><td>受け取る不動産（時価）</td><td class="num">'+yenLabel(s.selfReMarket)+'</td></tr>':'')
+          +'<tr><td>相続税（本人負担・現金）</td><td class="num debt-v">−'+yenLabel(s.selfTax)+'</td></tr>'
+          +'<tr style="border-top:1px solid var(--line)"><td><b>差引の純増</b></td><td class="num"><b>'+yenLabel(net)+'</b></td></tr>'
+          +(annualSelf>0?'<tr><td>相続後の年間継続費用</td><td class="num">'+yenLabel(annualSelf)+'/年</td></tr>':'')
+          +'</tbody></table></div>';
+      }).join("");
+      var totNet=estEnabled.reduce(function(t,e){var s=window.LifeSim.estateSummary(e);return t+s.selfLiquid+s.selfReMarket-s.selfTax;},0);
+      var totTax=estEnabled.reduce(function(t,e){return t+window.LifeSim.estateSummary(e).selfTax;},0);
+      estCardHtml='<div class="card"><div class="section-title">相続シミュレーション</div>'
+        +'<div class="road-stat"><div><div class="rs-label">受け取る純増（合計）</div><div class="rs-value num" style="color:var(--up)">'+yenU(totNet)+'</div></div><div><div class="rs-label">相続税（合計・本人負担）</div><div class="rs-value num">'+yenU(totTax)+'</div></div></div>'
+        +estRows
+        +'<div class="lp-note" style="margin-top:10px">上の「資産推移」「資産寿命」には、この相続（受取・相続税・不動産の継続費用）が反映されています。反映のオン/オフは相続ステップの「世帯のライフプランに反映する」で切り替えられます。相続税・評価額は概算です。</div></div>';
+    }
+
+    // 相続あり／なし比較（相続・贈与が設定されている場合）
+    var hasInh=(inh.receive&&inh.receive.length)||(inh.gifting&&((inh.gifting.annualAmount>0)||(inh.gifting.special&&inh.gifting.special.length)))||estEnabled.length;
     var inhHtml="";
     if(hasInh){
       var ci=window.LifeSim.compareInheritance(inp,{inflationRate:viewOpts.inflationRate, pensionStartAgeSelf:viewOpts.pensionStartAge, pensionStartAgeSpouse:viewOpts.pensionStartAge});
@@ -3054,7 +3272,7 @@ window.checkAppUpdate = function(cb){
       +'・<b>教育費</b>：文科省「子供の学習費調査」ベースの概算。高校無償化は就学支援金として収入計上（設定で切替）。<br>'
       +'・相続税や各種特例などの個別事情は簡略化しています。数値はすべて概算・目安です。'
       +'</div></details></div>';
-    host.innerHTML=headHtml+mainChart+assumpHtml+basisHtml+compHtml+swrHtml+fundsHtml+returnHtml+inflHtml+inflDefHtml+empHtml+penHtml+inhHtml+beqHtml+'<div class="lp-note">すべて概算・目安です。正確な数値は専門家にご確認ください。</div>';
+    host.innerHTML=headHtml+mainChart+assumpHtml+basisHtml+compHtml+swrHtml+fundsHtml+returnHtml+inflHtml+inflDefHtml+empHtml+penHtml+estCardHtml+inhHtml+beqHtml+'<div class="lp-note">すべて概算・目安です。正確な数値は専門家にご確認ください。</div>';
   }
   window.renderDashboard=renderDashboard;
   window.lpVO=function(key,val){ viewOpts[key]=Number(val); var l=document.getElementById("lpVO_"+key); if(l)l.textContent=(key==="inflationRate"?val+"%":val+"歳"); renderDashboard(); };
