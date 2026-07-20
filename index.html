@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260720063209";
+window.APP_VERSION = "20260720063942";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -2853,7 +2853,7 @@ window.checkAppUpdate = function(cb){
           +'<details style="margin-top:6px"><summary style="font-size:13px;color:var(--ink-2);cursor:pointer">継続費用の内訳（編集可）</summary>'
           +'<div class="lp-row"><div>'+field("管理費（月）",amtRe(e.id,re.id,"mgmtMonthly",re.mgmtMonthly,"例：15,000"))+'</div><div>'+field("修繕積立金（月）",amtRe(e.id,re.id,"repairMonthly",re.repairMonthly,"例：12,000"))+'</div></div>'
           +'<div class="lp-row"><div>'+field("固定資産税（年）",amtRe(e.id,re.id,"propertyTaxAnnual",re.propertyTaxAnnual,"例：100,000"))+'</div><div>'+field("その他維持費（年）",amtRe(e.id,re.id,"maintenanceAnnual",re.maintenanceAnnual,"例：0"))+'</div></div>'
-          +'<div class="lp-row"><div>'+field("リフォーム/大規模修繕（円）",amtRe(e.id,re.id,"renovAmount",re.renovAmount,"例：2,000,000"))+'</div><div>'+field("その周期（年ごと）",'<input type="number" value="'+(re.renovEvery||0)+'" onchange="lpEstReSet(\''+e.id+'\',\''+re.id+'\',\'renovEvery\',this.value,true)">')+'</div></div>'
+          +'<div class="lp-row"><div>'+field("リフォーム等（円）",amtRe(e.id,re.id,"renovAmount",re.renovAmount,"例：2,000,000"))+'</div><div>'+field("周期（年ごと）",'<input type="number" value="'+(re.renovEvery||0)+'" onchange="lpEstReSet(\''+e.id+'\',\''+re.id+'\',\'renovEvery\',this.value,true)">')+'</div></div>'
           +'</details></div>';
       }).join("");
       var sideClass=e.from==="spouse_parent"?"spouse":"self";
@@ -2862,12 +2862,12 @@ window.checkAppUpdate = function(cb){
       var relSel=(relList.indexOf(e.rel||e.label)>=0)?(e.rel||e.label):"その他";
       var dispName=(relSel!=="その他")?relSel:((e.label&&e.label.trim())?e.label:(fromLabel+"からの相続"));
       return '<div class="lp-event" style="border-left:3px solid '+(e.from==="spouse_parent"?"#059669":"#18181b")+'">'
-        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="min-width:0"><b style="font-size:14px">'+dispName+'</b><span class="est-tag '+sideClass+'">'+sideLabel+'</span></div><button class="del" onclick="lpEstDel(\''+e.id+'\')">削除</button></div>'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><div style="min-width:0;flex:1;display:flex;align-items:center;flex-wrap:wrap;gap:2px"><b style="font-size:14px;word-break:break-word">'+dispName+'</b><span class="est-tag '+sideClass+'">'+sideLabel+'</span></div><button class="del" style="flex:0 0 auto" onclick="lpEstDel(\''+e.id+'\')">削除</button></div>'
         +'<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:0 0 10px"><input type="checkbox" class="chk" '+(e.enabled?"checked":"")+' onchange="lpEstSet(\''+e.id+'\',\'enabled\',this.checked,true)"> <b>世帯のライフプランに反映する</b></label>'
         +'<div class="lp-row"><div>'+field("相続元",'<select onchange="lpEstSet(\''+e.id+'\',\'from\',this.value,true)"><option value="self_parent"'+(e.from==="self_parent"?" selected":"")+'>本人の親</option><option value="spouse_parent"'+(e.from==="spouse_parent"?" selected":"")+'>配偶者の親</option></select>')+'</div><div>'+field("続柄",'<select onchange="lpEstRel(\''+e.id+'\',this.value)">'+relList.map(function(r){return '<option value="'+r+'"'+(r===relSel?" selected":"")+'>'+r+'</option>';}).join("")+'</select>')+'</div></div>'
         +(relSel==="その他"?field("名前（自由記入）",'<input type="text" value="'+(e.label||"").replace(/"/g,"&quot;")+'" placeholder="例：祖父" onchange="lpEstSet(\''+e.id+'\',\'label\',this.value,true)">'):"")
         +field("相続する年（西暦）",'<input type="number" value="'+e.year+'" onchange="lpEstSet(\''+e.id+'\',\'year\',this.value,true)">')
-        +'<div class="lp-row"><div>'+field("法定相続人の人数",'<input type="number" value="'+e.heirs+'" onchange="lpEstSet(\''+e.id+'\',\'heirs\',this.value,true)">')+'</div><div>'+field("本人（配偶者）の取得割合（％）",'<input type="number" value="'+e.sharePct+'" onchange="lpEstSet(\''+e.id+'\',\'sharePct\',this.value,true)">')+'</div></div>'
+        +'<div class="lp-row"><div>'+field("相続人の人数",'<input type="number" value="'+e.heirs+'" onchange="lpEstSet(\''+e.id+'\',\'heirs\',this.value,true)">')+'</div><div>'+field("取得割合（％）",'<input type="number" value="'+e.sharePct+'" onchange="lpEstSet(\''+e.id+'\',\'sharePct\',this.value,true)">')+'</div></div>'
         +'<button class="btn btn-outline" style="padding:9px;margin:-4px 0 6px" onclick="lpEstAutoShare(\''+e.id+'\')">法定相続分で取得割合を自動入力</button>'
         +'<div class="lp-note" style="margin-top:0">配偶者が存命なら「配偶者1/2・子で残り1/2を等分」、いなければ「子で等分」で計算します。実際は遺産分割協議で自由に決められるので、上書きも可能です。</div>'
         +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:2px 0 4px"><input type="checkbox" class="chk" '+(e.spouseAlive?"checked":"")+' onchange="lpEstSet(\''+e.id+'\',\'spouseAlive\',this.checked,true)"> 亡くなる方に配偶者が存命（基礎控除・法定相続分に影響）</label>'
@@ -2875,7 +2875,7 @@ window.checkAppUpdate = function(cb){
         +'<div class="section-title" style="font-size:14px">遺産の内訳</div>'
         +'<div class="lp-row"><div>'+field("現預金（円）",amtCase(e.id,"cash",e.cash,"例：20,000,000"))+'</div><div>'+field("有価証券（円）",amtCase(e.id,"securities",e.securities,"例：10,000,000"))+'</div></div>'
         +(reHtml||'')
-        +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px"><button class="btn btn-outline" style="flex:1;min-width:120px;padding:9px" onclick="lpEstReAdd(\''+e.id+'\',\'mansion\')">＋ マンション</button><button class="btn btn-outline" style="flex:1;min-width:120px;padding:9px" onclick="lpEstReAdd(\''+e.id+'\',\'house\')">＋ 一戸建て</button><button class="btn btn-outline" style="flex:1;min-width:120px;padding:9px" onclick="lpEstReAdd(\''+e.id+'\',\'land\')">＋ 土地</button></div>'
+        +'<div style="display:flex;gap:6px;margin:4px 0 10px"><button class="btn btn-outline" style="flex:1;min-width:0;padding:9px 4px;font-size:13px" onclick="lpEstReAdd(\''+e.id+'\',\'mansion\')">＋マンション</button><button class="btn btn-outline" style="flex:1;min-width:0;padding:9px 4px;font-size:13px" onclick="lpEstReAdd(\''+e.id+'\',\'house\')">＋一戸建て</button><button class="btn btn-outline" style="flex:1;min-width:0;padding:9px 4px;font-size:13px" onclick="lpEstReAdd(\''+e.id+'\',\'land\')">＋土地</button></div>'
         +'<div class="road-stat"><div><div class="rs-label">相続税評価額 合計</div><div class="rs-value num">'+yen(s.taxable)+'</div></div><div><div class="rs-label">相続税（本人負担）</div><div class="rs-value num">'+yen(s.selfTax)+'</div></div></div>'
         +'<div class="lp-note">'+(ageAt!=null?'<b>'+e.year+'年（本人'+ageAt+'歳）</b>に、':'')+'本人が取得：現金 <b>'+yen(s.selfLiquid)+'</b> ＋ 不動産（時価）<b>'+yen(s.selfReMarket)+'</b>。相続税の本人負担 <b>'+yen(s.selfTax)+'</b> を現金で支払う想定（基礎控除 '+yen(s.basicDeduction)+'／相続人'+e.heirs+'人）。相続後の不動産 継続費用（本人持分）約 <b>'+yen(Math.round(s.annualCost*(e.sharePct/100)))+'/年</b>。</div>'
         +'</div>';
@@ -2883,7 +2883,7 @@ window.checkAppUpdate = function(cb){
     return '<div class="section-title">遺産・相続税シミュレーション（詳細）</div>'
       +'<div class="lp-note" style="margin:6px 0 12px">親などから受け取る遺産（現預金・有価証券・不動産）を入れると、相続税評価額と相続税の目安を概算し、「世帯に反映」にチェックすると資産寿命・資産推移に反映します。<b>本人の親</b>と<b>配偶者の親</b>を別ケースで登録でき、両方まとめて世帯のライフプランに合算されます。</div>'
       +(cases||'<div class="empty">まだ相続ケースがありません。</div>')
-      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"><button class="btn btn-outline" style="flex:1;min-width:150px" onclick="lpEstAdd(\'self_parent\')">＋ 本人の親からの相続</button><button class="btn btn-outline" style="flex:1;min-width:150px" onclick="lpEstAdd(\'spouse_parent\')">＋ 配偶者の親からの相続</button></div>';
+      +'<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"><button class="btn btn-outline" onclick="lpEstAdd(\'self_parent\')">＋ 本人の親からの相続</button><button class="btn btn-outline" onclick="lpEstAdd(\'spouse_parent\')">＋ 配偶者の親からの相続</button></div>';
   }
 
   function stepInheritance(){
