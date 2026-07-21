@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260721133423";
+window.APP_VERSION = "20260721134036";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -3088,17 +3088,24 @@ window.checkAppUpdate = function(cb){
     var maxInc=1, maxExp=1;
     rows.forEach(function(r){ maxInc=Math.max(maxInc,INC.reduce(function(s,c){return s+c.val(r);},0)); maxExp=Math.max(maxExp,EXP.reduce(function(s,c){return s+c.val(r);},0)); });
     function xAt(i){ return pL+col*i+col*0.5; }
-    function yA(v){ return bottom - plotH*(Math.max(0,v)/maxAsset); }
-    var yF0=bottom - plotH*0.36;                          // 収支0線（低め・支出が下に十分入る位置）
-    var upRoom=yF0-(pT+6), downRoom=bottom-yF0-4;
-    var flowUnit=Math.min(upRoom/maxInc, downRoom/maxExp);
+    // 0を1点に統一：0より上に資産・収入、下に支出（マイナス）
+    var y0=bottom - plotH*0.30;                           // 0線（下から30%）
+    var assetH=y0-pT, assetUnit=assetH/maxAsset;
+    function yA(v){ return y0 - assetUnit*Math.max(0,v); } // 資産（0線から上）
+    var yF0=y0;                                            // 収支の基準（=0線）
+    var downRoom=bottom-y0-2;
+    var flowUnit=Math.min((assetH*0.55)/maxInc, downRoom/maxExp);
     var grid="", yaxInner="";
-    for(var g=0;g<=4;g++){ var v=maxAsset*g/4, gy=yA(v); grid+='<line x1="'+pL+'" y1="'+gy.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+gy.toFixed(1)+'" stroke="#f1f1f3"/>'; yaxInner+='<text x="42" y="'+(gy+3).toFixed(0)+'" text-anchor="end" font-size="9" fill="#a1a1aa">'+window.yenShort(v)+'</text>'; }
-    // 収支0線より下＝支出ゾーン（薄い赤帯で明示）
-    var expZone='<rect x="'+pL+'" y="'+yF0.toFixed(1)+'" width="'+(W-pR-pL)+'" height="'+(bottom-yF0).toFixed(1)+'" fill="#ef4444" opacity="0.05"/>';
-    // 収支0線（実線・はっきり）＋左右にラベル
-    grid+='<line x1="'+pL+'" y1="'+yF0.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+yF0.toFixed(1)+'" stroke="#52525b" stroke-width="1.2"/>';
-    grid+='<rect x="'+(W-pR-118)+'" y="'+(yF0-9).toFixed(1)+'" width="114" height="15" rx="4" fill="#fff" opacity="0.85"/><text x="'+(W-pR-6)+'" y="'+(yF0+2).toFixed(1)+'" text-anchor="end" font-size="10" font-weight="600" fill="#52525b">↑収入 ／ 収支0 ／ 支出↓</text>';
+    for(var g=1;g<=3;g++){ var v=maxAsset*g/3, gy=yA(v); grid+='<line x1="'+pL+'" y1="'+gy.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+gy.toFixed(1)+'" stroke="#f1f1f3"/>'; yaxInner+='<text x="42" y="'+(gy+3).toFixed(0)+'" text-anchor="end" font-size="9" fill="#a1a1aa">'+window.yenShort(v)+'</text>'; }
+    var negY=Math.min(bottom, y0+maxExp*flowUnit);        // 負の目盛（支出側）
+    grid+='<line x1="'+pL+'" y1="'+negY.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+negY.toFixed(1)+'" stroke="#f1f1f3"/>';
+    yaxInner+='<text x="42" y="'+(negY+2).toFixed(0)+'" text-anchor="end" font-size="9" fill="#ef4444">-'+window.yenShort(maxExp)+'</text>';
+    // 0より下＝支出ゾーン（薄い赤帯で明示）
+    var expZone='<rect x="'+pL+'" y="'+y0.toFixed(1)+'" width="'+(W-pR-pL)+'" height="'+(bottom-y0).toFixed(1)+'" fill="#ef4444" opacity="0.05"/>';
+    // 0線（実線・太め）＋左のラベル
+    grid+='<line x1="'+pL+'" y1="'+y0.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+y0.toFixed(1)+'" stroke="#52525b" stroke-width="1.4"/>';
+    yaxInner+='<text x="42" y="'+(y0+3).toFixed(0)+'" text-anchor="end" font-size="10" font-weight="700" fill="#52525b">0</text>';
+    grid+='<rect x="'+(W-pR-116)+'" y="'+(y0-9).toFixed(1)+'" width="112" height="15" rx="4" fill="#fff" opacity="0.85"/><text x="'+(W-pR-6)+'" y="'+(y0+2).toFixed(1)+'" text-anchor="end" font-size="10" font-weight="600" fill="#52525b">↑資産・収入 ／ 0 ／ 支出↓</text>';
     var yaxSvg='<svg viewBox="0 0 46 '+H+'" width="46" height="'+H+'" style="position:absolute;left:1px;top:1px;background:#fff;pointer-events:none;border-radius:12px 0 0 12px">'+yaxInner+'</svg>';
     var bars="", bw=col*0.62;
     rows.forEach(function(r,i){ var x0=xAt(i)-bw/2;
@@ -3116,7 +3123,7 @@ window.checkAppUpdate = function(cb){
     var areaFill="", lines="";
     if(lpDetView.asset){
       var aY=rows.map(function(r){return yA(r.balance);}), aPath=smoothPath(aY);
-      areaFill+='<path d="'+aPath+' L'+xAt(n-1).toFixed(1)+','+bottom+' L'+xAt(0).toFixed(1)+','+bottom+' Z" fill="#2563eb" opacity="0.06"/>';
+      areaFill+='<path d="'+aPath+' L'+xAt(n-1).toFixed(1)+','+y0.toFixed(1)+' L'+xAt(0).toFixed(1)+','+y0.toFixed(1)+' Z" fill="#2563eb" opacity="0.06"/>';
       lines+='<path d="'+aPath+'" fill="none" stroke="#2563eb" stroke-width="2"/>';
     }
     if(lpDetView.real) lines+='<path d="'+smoothPath(rows.map(function(r){return yA(r.balance/Math.pow(1+infl,r.year-base));}))+'" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-dasharray="5 3"/>';
