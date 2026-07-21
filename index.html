@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260721130935";
+window.APP_VERSION = "20260721132205";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -3083,18 +3083,24 @@ window.checkAppUpdate = function(cb){
     ];
     var n=rows.length;
     var col=Math.max(15, Math.min(26, Math.round(760/n)));
-    var W=Math.max(660, n*col), H=380, pT=18, pB=44, pL=46, pR=8, plotH=H-pT-pB;
+    var W=Math.max(660, n*col), H=412, pT=14, pL=46, pR=8;
+    var tTop=14, tBot=248, tH=tBot-tTop;                          // 上：資産パネル
+    var bTop=274, bBot=382, bH=bBot-bTop, yF0=(bTop+bBot)/2;      // 下：収支パネル（0線が中央）
     var maxAsset=1; rows.forEach(function(r){ maxAsset=Math.max(maxAsset,r.balance,r.balance/Math.pow(1+infl,r.year-base)); });
     var maxInc=1, maxExp=1;
     rows.forEach(function(r){ maxInc=Math.max(maxInc,INC.reduce(function(s,c){return s+c.val(r);},0)); maxExp=Math.max(maxExp,EXP.reduce(function(s,c){return s+c.val(r);},0)); });
+    var maxFlow=Math.max(maxInc,maxExp);
     function xAt(i){ return pL+col*i+col*0.5; }
-    function yA(v){ return (H-pB)-plotH*(Math.max(0,v)/maxAsset); }
-    var yF0=pT+plotH*0.50, upSpace=yF0-(pT+plotH*0.04), downSpace=(H-pB)-yF0-plotH*0.04;
-    var flowUnit=Math.min(upSpace/maxInc, downSpace/maxExp);
+    function yA(v){ return tBot - tH*(Math.max(0,v)/maxAsset); }
+    var flowUnit=((yF0-bTop)-5)/maxFlow;
     var grid="", yaxInner="";
-    for(var g=0;g<=4;g++){ var v=maxAsset*g/4, gy=yA(v); grid+='<line x1="'+pL+'" y1="'+gy+'" x2="'+(W-pR)+'" y2="'+gy+'" stroke="#f1f1f3"/>'; yaxInner+='<text x="42" y="'+(gy+3).toFixed(0)+'" text-anchor="end" font-size="9" fill="#a1a1aa">'+window.yenShort(v)+'</text>'; }
+    for(var g=0;g<=3;g++){ var v=maxAsset*g/3, gy=yA(v); grid+='<line x1="'+pL+'" y1="'+gy.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+gy.toFixed(1)+'" stroke="#f1f1f3"/>'; yaxInner+='<text x="42" y="'+(gy+3).toFixed(0)+'" text-anchor="end" font-size="9" fill="#a1a1aa">'+window.yenShort(v)+'</text>'; }
+    grid+='<line x1="'+pL+'" y1="'+bTop+'" x2="'+(W-pR)+'" y2="'+bTop+'" stroke="#f1f1f3"/><line x1="'+pL+'" y1="'+bBot+'" x2="'+(W-pR)+'" y2="'+bBot+'" stroke="#f1f1f3"/>';
     grid+='<line x1="'+pL+'" y1="'+yF0+'" x2="'+(W-pR)+'" y2="'+yF0+'" stroke="#9a9aa2" stroke-dasharray="3 3"/>';
+    grid+='<text x="'+(pL+4)+'" y="'+(tTop+10)+'" font-size="9" fill="#c4c4c8">資産（円）</text><text x="'+(pL+4)+'" y="'+(bTop-3)+'" font-size="9" fill="#c4c4c8">年間の収支（上=収入／下=支出）</text>';
+    yaxInner+='<text x="42" y="'+(bTop+4).toFixed(0)+'" text-anchor="end" font-size="8" fill="#16a34a">+'+window.yenShort(maxFlow)+'</text>';
     yaxInner+='<text x="42" y="'+(yF0+3).toFixed(0)+'" text-anchor="end" font-size="9" fill="#9a9aa2">0</text>';
+    yaxInner+='<text x="42" y="'+(bBot+0).toFixed(0)+'" text-anchor="end" font-size="8" fill="#ef4444">-'+window.yenShort(maxFlow)+'</text>';
     var yaxSvg='<svg viewBox="0 0 46 '+H+'" width="46" height="'+H+'" style="position:absolute;left:1px;top:1px;background:#fff;pointer-events:none;border-radius:12px 0 0 12px">'+yaxInner+'</svg>';
     var bars="", bw=col*0.62;
     rows.forEach(function(r,i){ var x0=xAt(i)-bw/2;
@@ -3109,25 +3115,25 @@ window.checkAppUpdate = function(cb){
         d+="C"+c1x.toFixed(1)+","+c1y.toFixed(1)+" "+c2x.toFixed(1)+","+c2y.toFixed(1)+" "+p2[0].toFixed(1)+","+p2[1].toFixed(1); }
       return d;
     }
-    var lines="";
+    var areaFill="", lines="";
     if(lpDetView.asset){
       var aY=rows.map(function(r){return yA(r.balance);}), aPath=smoothPath(aY);
-      lines+='<path d="'+aPath+' L'+xAt(n-1).toFixed(1)+','+(H-pB)+' L'+xAt(0).toFixed(1)+','+(H-pB)+' Z" fill="#2563eb" opacity="0.06"/>';
+      areaFill+='<path d="'+aPath+' L'+xAt(n-1).toFixed(1)+','+tBot+' L'+xAt(0).toFixed(1)+','+tBot+' Z" fill="#2563eb" opacity="0.06"/>';
       lines+='<path d="'+aPath+'" fill="none" stroke="#2563eb" stroke-width="2"/>';
     }
     if(lpDetView.real) lines+='<path d="'+smoothPath(rows.map(function(r){return yA(r.balance/Math.pow(1+infl,r.year-base));}))+'" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-dasharray="5 3"/>';
-    if(lpDetView.netcf) lines+='<path d="'+smoothPath(rows.map(function(r){ return Math.max(pT,Math.min(H-pB, yF0-(r.netCashflow||0)*flowUnit)); }))+'" fill="none" stroke="#18181b" stroke-width="1.6"/>';
+    if(lpDetView.netcf) lines+='<path d="'+smoothPath(rows.map(function(r){ return Math.max(bTop,Math.min(bBot, yF0-(r.netCashflow||0)*flowUnit)); }))+'" fill="none" stroke="#18181b" stroke-width="1.6"/>';
     // マーカー：現預金マイナス●（赤）／投資取り崩し▼（橙）※資産ライン上
     var marks="";
     if(lpDetView.asset){ rows.forEach(function(r,i){ var x=xAt(i), y=yA(r.balance);
       if(r.buckets && r.buckets.cash<0){ marks+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="3.2" fill="#dc2626"/>'; }
       else if((r.netCashflow||0)<0){ marks+='<path d="M'+(x-3.2).toFixed(1)+','+(y-4).toFixed(1)+' L'+(x+3.2).toFixed(1)+','+(y-4).toFixed(1)+' L'+x.toFixed(1)+','+(y+1.5).toFixed(1)+' Z" fill="#f59e0b"/>'; } }); }
     lines+=marks;
-    var xl=""; rows.forEach(function(r,i){ if(r.year%5===0){ xl+='<text x="'+xAt(i).toFixed(1)+'" y="'+(H-26)+'" text-anchor="middle" font-size="9" fill="#a1a1aa">'+r.year+'</text><text x="'+xAt(i).toFixed(1)+'" y="'+(H-14)+'" text-anchor="middle" font-size="9" fill="#c4c4c8">'+r.ageSelf+'</text>'; } });
-    var cursor='<line id="lpDetCursor" x1="0" y1="'+pT+'" x2="0" y2="'+(H-pB)+'" stroke="#18181b" stroke-width="1" opacity="0"/>';
-    var hits=""; rows.forEach(function(r,i){ hits+='<rect x="'+(xAt(i)-col/2).toFixed(1)+'" y="'+pT+'" width="'+col+'" height="'+(H-pB-pT)+'" fill="transparent" onmousemove="lpDetTip(event,'+i+')" onclick="lpDetTip(event,'+i+')"/>'; });
+    var xl=""; rows.forEach(function(r,i){ if(r.year%5===0){ xl+='<text x="'+xAt(i).toFixed(1)+'" y="'+(H-14)+'" text-anchor="middle" font-size="9" fill="#a1a1aa">'+r.year+'</text><text x="'+xAt(i).toFixed(1)+'" y="'+(H-3)+'" text-anchor="middle" font-size="9" fill="#c4c4c8">'+r.ageSelf+'</text>'; } });
+    var cursor='<line id="lpDetCursor" x1="0" y1="'+tTop+'" x2="0" y2="'+bBot+'" stroke="#18181b" stroke-width="1" opacity="0"/>';
+    var hits=""; rows.forEach(function(r,i){ hits+='<rect x="'+(xAt(i)-col/2).toFixed(1)+'" y="'+tTop+'" width="'+col+'" height="'+(bBot-tTop)+'" fill="transparent" onmousemove="lpDetTip(event,'+i+')" onclick="lpDetTip(event,'+i+')"/>'; });
     window.lpDetData=rows.map(function(r,i){ return {year:r.year,age:r.ageSelf,self:r.netSalarySelf||0,spouse:r.netSalarySpouse||0,pension:r.pension||0,invest:r.investReturn||0,incOth:Math.max(0,(r.totalIncome||0)-(r.netSalary||0)-(r.pension||0)),living:r.living||0,housing:r.housing||0,edu:r.education||0,big:r.bigExpense||0,expOth:Math.max(0,(r.totalExpense||0)-(r.living||0)-(r.housing||0)-(r.education||0)-(r.bigExpense||0)),incTotal:r.totalIncome||0,expTotal:r.totalExpense||0,balance:r.balance||0,netcf:r.netCashflow||0,xpx:xAt(i)}; });
-    var svg='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" style="display:block">'+grid+bars+lines+xl+cursor+hits+'</svg>';
+    var svg='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" style="display:block">'+grid+areaFill+bars+lines+xl+cursor+hits+'</svg>';
     // サマリー指標
     var minBal=Math.min.apply(null, rows.map(function(r){return r.balance;}));
     var retRow=rows.find(function(r){return r.ageSelf>=(retAge||65);}); var retBal=retRow?retRow.balance:rows[rows.length-1].balance;
@@ -3148,7 +3154,7 @@ window.checkAppUpdate = function(cb){
       +'<span><span style="display:inline-block;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #f59e0b"></span>投資を取り崩した年</span></div>';
     return '<div class="card"><div class="section-title">詳細グラフ（収支の内訳と資産）</div>'
       +chips+toggles
-      +'<div class="lp-note" style="margin:2px 0 6px">← 横にスクロールできます。0線より上が収入、下が支出の内訳。青ラインが資産合計、破線が実質（今のお金換算）。棒をタップ／カーソルを合わせるとその年の内訳が出ます。</div>'
+      +'<div class="lp-note" style="margin:2px 0 6px">← 横にスクロールできます。<b>上パネル＝資産</b>（青ライン＝資産合計、破線＝実質）、<b>下パネル＝年間の収支</b>（0線より上＝収入、下＝支出の内訳）。棒をタップ／カーソルを合わせるとその年の内訳が出ます。</div>'
       +'<div class="det-graph" style="position:relative">'
       +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line-soft);border-radius:12px" onmouseleave="lpDetHide()">'+svg+'</div>'
       +yaxSvg
