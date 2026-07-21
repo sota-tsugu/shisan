@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260721132811";
+window.APP_VERSION = "20260721133423";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -3089,14 +3089,16 @@ window.checkAppUpdate = function(cb){
     rows.forEach(function(r){ maxInc=Math.max(maxInc,INC.reduce(function(s,c){return s+c.val(r);},0)); maxExp=Math.max(maxExp,EXP.reduce(function(s,c){return s+c.val(r);},0)); });
     function xAt(i){ return pL+col*i+col*0.5; }
     function yA(v){ return bottom - plotH*(Math.max(0,v)/maxAsset); }
-    var yF0=bottom - plotH*0.42;                          // 収支0線（低め・支出が下に十分入る位置）
+    var yF0=bottom - plotH*0.36;                          // 収支0線（低め・支出が下に十分入る位置）
     var upRoom=yF0-(pT+6), downRoom=bottom-yF0-4;
     var flowUnit=Math.min(upRoom/maxInc, downRoom/maxExp);
     var grid="", yaxInner="";
     for(var g=0;g<=4;g++){ var v=maxAsset*g/4, gy=yA(v); grid+='<line x1="'+pL+'" y1="'+gy.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+gy.toFixed(1)+'" stroke="#f1f1f3"/>'; yaxInner+='<text x="42" y="'+(gy+3).toFixed(0)+'" text-anchor="end" font-size="9" fill="#a1a1aa">'+window.yenShort(v)+'</text>'; }
-    // 収支0線（実線・はっきり）＋右端にラベル
+    // 収支0線より下＝支出ゾーン（薄い赤帯で明示）
+    var expZone='<rect x="'+pL+'" y="'+yF0.toFixed(1)+'" width="'+(W-pR-pL)+'" height="'+(bottom-yF0).toFixed(1)+'" fill="#ef4444" opacity="0.05"/>';
+    // 収支0線（実線・はっきり）＋左右にラベル
     grid+='<line x1="'+pL+'" y1="'+yF0.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+yF0.toFixed(1)+'" stroke="#52525b" stroke-width="1.2"/>';
-    grid+='<rect x="'+(W-pR-64)+'" y="'+(yF0-9).toFixed(1)+'" width="60" height="15" rx="4" fill="#fff" opacity="0.9"/><text x="'+(W-pR-6)+'" y="'+(yF0+2).toFixed(1)+'" text-anchor="end" font-size="10" font-weight="600" fill="#52525b">収支0</text>';
+    grid+='<rect x="'+(W-pR-118)+'" y="'+(yF0-9).toFixed(1)+'" width="114" height="15" rx="4" fill="#fff" opacity="0.85"/><text x="'+(W-pR-6)+'" y="'+(yF0+2).toFixed(1)+'" text-anchor="end" font-size="10" font-weight="600" fill="#52525b">↑収入 ／ 収支0 ／ 支出↓</text>';
     var yaxSvg='<svg viewBox="0 0 46 '+H+'" width="46" height="'+H+'" style="position:absolute;left:1px;top:1px;background:#fff;pointer-events:none;border-radius:12px 0 0 12px">'+yaxInner+'</svg>';
     var bars="", bw=col*0.62;
     rows.forEach(function(r,i){ var x0=xAt(i)-bw/2;
@@ -3129,7 +3131,7 @@ window.checkAppUpdate = function(cb){
     var cursor='<line id="lpDetCursor" x1="0" y1="'+pT+'" x2="0" y2="'+bottom+'" stroke="#18181b" stroke-width="1" opacity="0"/>';
     var hits=""; rows.forEach(function(r,i){ hits+='<rect x="'+(xAt(i)-col/2).toFixed(1)+'" y="'+pT+'" width="'+col+'" height="'+(bottom-pT)+'" fill="transparent" onmousemove="lpDetTip(event,'+i+')" onclick="lpDetTip(event,'+i+')"/>'; });
     window.lpDetData=rows.map(function(r,i){ return {year:r.year,age:r.ageSelf,self:r.netSalarySelf||0,spouse:r.netSalarySpouse||0,pension:r.pension||0,invest:r.investReturn||0,incOth:Math.max(0,(r.totalIncome||0)-(r.netSalary||0)-(r.pension||0)),living:r.living||0,housing:r.housing||0,edu:r.education||0,big:r.bigExpense||0,expOth:Math.max(0,(r.totalExpense||0)-(r.living||0)-(r.housing||0)-(r.education||0)-(r.bigExpense||0)),incTotal:r.totalIncome||0,expTotal:r.totalExpense||0,balance:r.balance||0,netcf:r.netCashflow||0,xpx:xAt(i)}; });
-    var svg='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" style="display:block">'+grid+areaFill+bars+lines+xl+cursor+hits+'</svg>';
+    var svg='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" style="display:block">'+grid+areaFill+expZone+bars+lines+xl+cursor+hits+'</svg>';
     // サマリー指標
     var minBal=Math.min.apply(null, rows.map(function(r){return r.balance;}));
     var retRow=rows.find(function(r){return r.ageSelf>=(retAge||65);}); var retBal=retRow?retRow.balance:rows[rows.length-1].balance;
