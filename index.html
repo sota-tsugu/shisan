@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260721134036";
+window.APP_VERSION = "20260722141527";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -3050,7 +3050,7 @@ window.checkAppUpdate = function(cb){
     function rw(l,v,c){ return v>0?'<div class="tt-row"><span>'+(c?'<i style="background:'+c+'"></i>':'')+l+'</span><span class="num">'+window.yen(v)+'</span></div>':''; }
     tip.innerHTML='<div class="tt-h">'+d.year+'年（本人'+d.age+'歳）</div>'
       +'<div class="tt-sec">収入 '+window.yen(d.incTotal)+'</div>'
-      +rw("本人給与",d.self,"#16a34a")+rw("配偶者給与",d.spouse,"#4ade80")+rw("年金",d.pension,"#f59e0b")+rw("その他",d.incOth,"#9ca3af")
+      +rw("本人給与",d.self,"#16a34a")+rw("配偶者給与",d.spouse,"#4ade80")+rw("年金",d.pension,"#7c3aed")+rw("その他",d.incOth,"#9ca3af")
       +'<div class="tt-sec">支出 '+window.yen(d.expTotal)+'</div>'
       +rw("生活費",d.living,"#ef4444")+rw("住居費",d.housing,"#f97316")+rw("教育費",d.edu,"#eab308")+rw("大型イベント",d.big,"#ec4899")+rw("その他",d.expOth,"#9ca3af")
       +'<div class="tt-sec">資産・運用</div>'
@@ -3071,7 +3071,7 @@ window.checkAppUpdate = function(cb){
     var INC=[
       {key:"self",label:"本人給与",color:"#16a34a",val:function(r){return r.netSalarySelf||0;}},
       {key:"spouse",label:"配偶者給与",color:"#4ade80",val:function(r){return r.netSalarySpouse||0;}},
-      {key:"pen",label:"年金",color:"#f59e0b",val:function(r){return r.pension||0;}},
+      {key:"pen",label:"年金",color:"#7c3aed",val:function(r){return r.pension||0;}},
       {key:"oth",label:"その他収入",color:"#9ca3af",val:function(r){return Math.max(0,(r.totalIncome||0)-(r.netSalary||0)-(r.pension||0));}}
     ];
     var EXP=[
@@ -3102,10 +3102,11 @@ window.checkAppUpdate = function(cb){
     yaxInner+='<text x="42" y="'+(negY+2).toFixed(0)+'" text-anchor="end" font-size="9" fill="#ef4444">-'+window.yenShort(maxExp)+'</text>';
     // 0より下＝支出ゾーン（薄い赤帯で明示）
     var expZone='<rect x="'+pL+'" y="'+y0.toFixed(1)+'" width="'+(W-pR-pL)+'" height="'+(bottom-y0).toFixed(1)+'" fill="#ef4444" opacity="0.05"/>';
-    // 0線（実線・太め）＋左のラベル
+    // 0線（実線・太め）。左の固定軸に「収入↑／0／支出↓」を表示（常に見える）
     grid+='<line x1="'+pL+'" y1="'+y0.toFixed(1)+'" x2="'+(W-pR)+'" y2="'+y0.toFixed(1)+'" stroke="#52525b" stroke-width="1.4"/>';
+    yaxInner+='<text x="42" y="'+(y0-11).toFixed(0)+'" text-anchor="end" font-size="8" fill="#16a34a">収入↑</text>';
     yaxInner+='<text x="42" y="'+(y0+3).toFixed(0)+'" text-anchor="end" font-size="10" font-weight="700" fill="#52525b">0</text>';
-    grid+='<rect x="'+(W-pR-116)+'" y="'+(y0-9).toFixed(1)+'" width="112" height="15" rx="4" fill="#fff" opacity="0.85"/><text x="'+(W-pR-6)+'" y="'+(y0+2).toFixed(1)+'" text-anchor="end" font-size="10" font-weight="600" fill="#52525b">↑資産・収入 ／ 0 ／ 支出↓</text>';
+    yaxInner+='<text x="42" y="'+(y0+14).toFixed(0)+'" text-anchor="end" font-size="8" fill="#ef4444">支出↓</text>';
     var yaxSvg='<svg viewBox="0 0 46 '+H+'" width="46" height="'+H+'" style="position:absolute;left:1px;top:1px;background:#fff;pointer-events:none;border-radius:12px 0 0 12px">'+yaxInner+'</svg>';
     var bars="", bw=col*0.62;
     rows.forEach(function(r,i){ var x0=xAt(i)-bw/2;
@@ -3159,7 +3160,7 @@ window.checkAppUpdate = function(cb){
       +'<span><span style="display:inline-block;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #f59e0b"></span>投資を取り崩した年</span></div>';
     return '<div class="card"><div class="section-title">詳細グラフ（収支の内訳と資産）</div>'
       +chips+toggles
-      +'<div class="lp-note" style="margin:2px 0 6px">← 横にスクロールできます。青ライン＝資産合計、破線＝実質（今のお金換算）。<b>「収支0」の線を境に、上＝収入・下＝支出</b>の内訳バーです。棒をタップ／カーソルを合わせるとその年の内訳が出ます。</div>'
+      +'<div class="lp-note" style="margin:2px 0 6px">← 横にスクロールできます。青ライン＝資産合計、破線＝実質（今のお金換算）。<b>0線を境に、上＝収入・資産／下＝支出（マイナス）</b>の内訳バーです（左端に「収入↑／0／支出↓」）。棒をタップ／カーソルを合わせるとその年の内訳が出ます。</div>'
       +'<div class="det-graph" style="position:relative">'
       +'<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line-soft);border-radius:12px" onmouseleave="lpDetHide()">'+svg+'</div>'
       +yaxSvg
