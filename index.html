@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260722142405";
+window.APP_VERSION = "20260724172039";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -67,6 +67,10 @@ window.checkAppUpdate = function(cb){
   main { max-width:600px; margin:0 auto; padding:18px 16px calc(56px + env(safe-area-inset-bottom,0px)); }
   .view { display:none; }
   .view.active { display:block; animation:fade .22s ease; }
+  .view.active.sv-l { animation:svL .26s ease; }
+  .view.active.sv-r { animation:svR .26s ease; }
+  @keyframes svL { from{opacity:.3;transform:translateX(30px)} to{opacity:1;transform:none} }
+  @keyframes svR { from{opacity:.3;transform:translateX(-30px)} to{opacity:1;transform:none} }
   @keyframes fade { from{opacity:0;transform:translateY(4px);} to{opacity:1;transform:none;} }
 
   .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:22px; margin-bottom:14px; }
@@ -1739,12 +1743,42 @@ window.checkAppUpdate = function(cb){
   function closeCelebrate() { document.getElementById("celebrateModal").style.display = "none"; }
 
   // ===== ナビ =====
-  function showView(name) {
-    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
-    document.getElementById("view-"+name).classList.add("active");
+  var VIEW_ORDER = ["home","assets","trends","goals","lifeplan"];
+  function currentView(){ var a=document.querySelector(".view.active"); return a ? a.id.replace("view-","") : "home"; }
+  function showView(name, dir) {
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active","sv-l","sv-r"));
+    var el=document.getElementById("view-"+name);
+    el.classList.add("active");
+    if(dir==="next") el.classList.add("sv-l"); else if(dir==="prev") el.classList.add("sv-r");
     document.querySelectorAll(".nav button").forEach(b => b.classList.toggle("active", b.dataset.view === name));
-    window.scrollTo({ top:0, behavior:"smooth" });
+    window.scrollTo({ top:0, behavior: dir ? "auto" : "smooth" });
   }
+  // スワイプでタブ切り替え（横スクロール要素・スライダー上では無効）
+  (function(){
+    var x0=0,y0=0,tracking=false,guarded=false;
+    function hScrollableUnder(node){
+      while(node && node!==document.body && node.nodeType===1){
+        if(node.tagName==="INPUT" && node.type==="range") return true;
+        var st=window.getComputedStyle(node), ox=st.overflowX;
+        if((ox==="auto"||ox==="scroll") && node.scrollWidth>node.clientWidth+4) return true;
+        node=node.parentNode;
+      }
+      return false;
+    }
+    document.addEventListener("touchstart", function(e){
+      if(e.touches.length!==1){ tracking=false; return; }
+      var t=e.touches[0]; x0=t.clientX; y0=t.clientY; tracking=true; guarded=hScrollableUnder(e.target);
+    }, {passive:true});
+    document.addEventListener("touchend", function(e){
+      if(!tracking||guarded) return; tracking=false;
+      var t=e.changedTouches[0], dx=t.clientX-x0, dy=t.clientY-y0;
+      if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.6){
+        var cur=VIEW_ORDER.indexOf(currentView()); if(cur<0) return;
+        if(dx<0 && cur<VIEW_ORDER.length-1) showView(VIEW_ORDER[cur+1],"next");
+        else if(dx>0 && cur>0) showView(VIEW_ORDER[cur-1],"prev");
+      }
+    }, {passive:true});
+  })();
 
   // ===== カテゴリ選択 =====
   let selectedCat = "cash";
