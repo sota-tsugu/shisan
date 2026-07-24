@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260724173406";
+window.APP_VERSION = "20260724173917";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -1767,7 +1767,7 @@ window.checkAppUpdate = function(cb){
   // スワイプでタブ切り替え（指に追従。横スクロール要素・スライダー上では無効）
   (function(){
     if(!("ontouchstart" in window)) return;
-    var sx=0,sy=0,decided=false,drag=false,guarded=false,cur=null,W=360,atS=false,atE=false,dxLast=0;
+    var sx=0,sy=0,decided=false,drag=false,guarded=false,cur=null,W=360,atS=false,atE=false,dxLast=0,vx=0,vt=0,vel=0;
     function guardEl(node){ while(node && node!==document.body && node.nodeType===1){ if(node.tagName==="INPUT"&&node.type==="range")return true; var st=window.getComputedStyle(node),ox=st.overflowX; if((ox==="auto"||ox==="scroll")&&node.scrollWidth>node.clientWidth+4)return true; node=node.parentNode; } return false; }
     function clr(el){ if(!el)return; el.style.transition=""; el.style.transform=""; el.style.opacity=""; }
     document.addEventListener("touchstart", function(e){
@@ -1775,6 +1775,7 @@ window.checkAppUpdate = function(cb){
       var t=e.touches[0]; sx=t.clientX; sy=t.clientY; decided=false; drag=false; guarded=guardEl(e.target);
       cur=document.querySelector(".view.active"); W=window.innerWidth||360;
       var i=VIEW_ORDER.indexOf(currentView()); atS=i<=0; atE=i>=VIEW_ORDER.length-1;
+      vx=t.clientX; vt=(window.performance&&performance.now)?performance.now():Date.now(); vel=0;
     }, {passive:true});
     document.addEventListener("touchmove", function(e){
       if(guarded||!cur||e.touches.length!==1) return;
@@ -1782,14 +1783,20 @@ window.checkAppUpdate = function(cb){
       if(!decided){ if(Math.abs(dx)<8 && Math.abs(dy)<8) return; decided=true; drag=Math.abs(dx)>Math.abs(dy)*1.2; if(drag) cur.style.transition="none"; }
       if(!drag) return;
       e.preventDefault();
+      var now=(window.performance&&performance.now)?performance.now():Date.now(), dt=now-vt; if(dt>0){ vel=(t.clientX-vx)/dt; } vx=t.clientX; vt=now; // px/ms
       var d=dx; if((d>0&&atS)||(d<0&&atE)) d*=0.3; d=Math.max(-W,Math.min(W,d)); dxLast=d;
       cur.style.transform="translateX("+d.toFixed(0)+"px)"; cur.style.opacity=(1-Math.min(0.4,Math.abs(d)/W)).toFixed(2);
     }, {passive:false});
     document.addEventListener("touchend", function(){
       if(!drag) return; drag=false;
-      var d=dxLast, i=VIEW_ORDER.indexOf(currentView()), go=Math.abs(d)>W*0.2;
-      if(go && d<0 && !atE){ clr(cur); showView(VIEW_ORDER[i+1],"next"); }
-      else if(go && d>0 && !atS){ clr(cur); showView(VIEW_ORDER[i-1],"prev"); }
+      var d=dxLast, i=VIEW_ORDER.indexOf(currentView());
+      var dist=Math.abs(d)>W*0.25;        // しっかりスワイプ（距離25%）
+      var flick=Math.abs(vel)>0.45;       // 速く払った（フリック・px/ms）
+      var dir=0;
+      if(dist) dir=(d<0)?1:-1;            // 距離基準は移動方向で判定
+      else if(flick) dir=(vel<0)?1:-1;    // 距離不足でも速ければフリック方向で判定
+      if(dir===1 && !atE){ clr(cur); showView(VIEW_ORDER[i+1],"next"); }
+      else if(dir===-1 && !atS){ clr(cur); showView(VIEW_ORDER[i-1],"prev"); }
       else { var c=cur; c.style.transition="transform .2s ease, opacity .2s ease"; c.style.transform="translateX(0)"; c.style.opacity="1"; setTimeout(function(){ clr(c); }, 220); }
     }, {passive:true});
   })();
