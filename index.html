@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260724172039";
+window.APP_VERSION = "20260724173406";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -67,10 +67,10 @@ window.checkAppUpdate = function(cb){
   main { max-width:600px; margin:0 auto; padding:18px 16px calc(56px + env(safe-area-inset-bottom,0px)); }
   .view { display:none; }
   .view.active { display:block; animation:fade .22s ease; }
-  .view.active.sv-l { animation:svL .26s ease; }
-  .view.active.sv-r { animation:svR .26s ease; }
-  @keyframes svL { from{opacity:.3;transform:translateX(30px)} to{opacity:1;transform:none} }
-  @keyframes svR { from{opacity:.3;transform:translateX(-30px)} to{opacity:1;transform:none} }
+  .view.active.sv-l { animation:svL .28s cubic-bezier(.25,.9,.35,1); }
+  .view.active.sv-r { animation:svR .28s cubic-bezier(.25,.9,.35,1); }
+  @keyframes svL { from{opacity:.5;transform:translateX(46px)} to{opacity:1;transform:none} }
+  @keyframes svR { from{opacity:.5;transform:translateX(-46px)} to{opacity:1;transform:none} }
   @keyframes fade { from{opacity:0;transform:translateY(4px);} to{opacity:1;transform:none;} }
 
   .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:22px; margin-bottom:14px; }
@@ -532,6 +532,17 @@ window.checkAppUpdate = function(cb){
       <div class="celebrate-title">段階目標を達成！</div>
       <div class="celebrate-msg" id="celebrateMsg"></div>
       <button class="btn btn-primary" onclick="closeCelebrate()">続ける</button>
+    </div>
+  </div>
+
+  <!-- 月末チェック（入力もれ確認）モーダル -->
+  <div class="celebrate-overlay" id="monthEndModal">
+    <div class="celebrate" style="text-align:left">
+      <div style="text-align:center"><div class="celebrate-emoji">🗓️</div>
+      <div class="celebrate-title">月末の資産チェック</div></div>
+      <div class="celebrate-msg" style="text-align:left">もうすぐ月末です。<b>今月の資産額に入力もれはありませんか？</b><br>各口座の残高や投資の評価額を最新に更新しておくと、推移の記録が正確になります。</div>
+      <div style="display:flex;gap:8px;margin-top:6px"><button class="btn btn-ghost" style="flex:1" onclick="meLater()">後で</button><button class="btn btn-primary" style="flex:1" onclick="meGoAssets()">資産を確認する</button></div>
+      <div style="text-align:center;margin-top:10px"><a href="javascript:void(0)" id="meNotifyLink" onclick="meEnableNotify()" style="font-size:12px;color:var(--muted)">月末にOS通知も受け取る</a></div>
     </div>
   </div>
 
@@ -1612,7 +1623,7 @@ window.checkAppUpdate = function(cb){
   const ICON_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 15l7-7 7 7"/></svg>';
   const ICON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg>';
 
-  function save() { localStorage.setItem(KEY, JSON.stringify(assets)); }
+  function save() { localStorage.setItem(KEY, JSON.stringify(assets)); try{ localStorage.setItem("assetUpdatedYM", currentYM()); localStorage.setItem("assetUpdatedDate", new Date().toISOString().slice(0,10)); }catch(e){} }
   function saveHistory() { localStorage.setItem(HKEY, JSON.stringify(history)); }
   function yen(n) { return "¥" + Number(Math.round(n)).toLocaleString("ja-JP"); }
   function yenShort(n) {
@@ -1753,30 +1764,33 @@ window.checkAppUpdate = function(cb){
     document.querySelectorAll(".nav button").forEach(b => b.classList.toggle("active", b.dataset.view === name));
     window.scrollTo({ top:0, behavior: dir ? "auto" : "smooth" });
   }
-  // スワイプでタブ切り替え（横スクロール要素・スライダー上では無効）
+  // スワイプでタブ切り替え（指に追従。横スクロール要素・スライダー上では無効）
   (function(){
-    var x0=0,y0=0,tracking=false,guarded=false;
-    function hScrollableUnder(node){
-      while(node && node!==document.body && node.nodeType===1){
-        if(node.tagName==="INPUT" && node.type==="range") return true;
-        var st=window.getComputedStyle(node), ox=st.overflowX;
-        if((ox==="auto"||ox==="scroll") && node.scrollWidth>node.clientWidth+4) return true;
-        node=node.parentNode;
-      }
-      return false;
-    }
+    if(!("ontouchstart" in window)) return;
+    var sx=0,sy=0,decided=false,drag=false,guarded=false,cur=null,W=360,atS=false,atE=false,dxLast=0;
+    function guardEl(node){ while(node && node!==document.body && node.nodeType===1){ if(node.tagName==="INPUT"&&node.type==="range")return true; var st=window.getComputedStyle(node),ox=st.overflowX; if((ox==="auto"||ox==="scroll")&&node.scrollWidth>node.clientWidth+4)return true; node=node.parentNode; } return false; }
+    function clr(el){ if(!el)return; el.style.transition=""; el.style.transform=""; el.style.opacity=""; }
     document.addEventListener("touchstart", function(e){
-      if(e.touches.length!==1){ tracking=false; return; }
-      var t=e.touches[0]; x0=t.clientX; y0=t.clientY; tracking=true; guarded=hScrollableUnder(e.target);
+      if(e.touches.length!==1){ drag=false; return; }
+      var t=e.touches[0]; sx=t.clientX; sy=t.clientY; decided=false; drag=false; guarded=guardEl(e.target);
+      cur=document.querySelector(".view.active"); W=window.innerWidth||360;
+      var i=VIEW_ORDER.indexOf(currentView()); atS=i<=0; atE=i>=VIEW_ORDER.length-1;
     }, {passive:true});
-    document.addEventListener("touchend", function(e){
-      if(!tracking||guarded) return; tracking=false;
-      var t=e.changedTouches[0], dx=t.clientX-x0, dy=t.clientY-y0;
-      if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.6){
-        var cur=VIEW_ORDER.indexOf(currentView()); if(cur<0) return;
-        if(dx<0 && cur<VIEW_ORDER.length-1) showView(VIEW_ORDER[cur+1],"next");
-        else if(dx>0 && cur>0) showView(VIEW_ORDER[cur-1],"prev");
-      }
+    document.addEventListener("touchmove", function(e){
+      if(guarded||!cur||e.touches.length!==1) return;
+      var t=e.touches[0], dx=t.clientX-sx, dy=t.clientY-sy;
+      if(!decided){ if(Math.abs(dx)<8 && Math.abs(dy)<8) return; decided=true; drag=Math.abs(dx)>Math.abs(dy)*1.2; if(drag) cur.style.transition="none"; }
+      if(!drag) return;
+      e.preventDefault();
+      var d=dx; if((d>0&&atS)||(d<0&&atE)) d*=0.3; d=Math.max(-W,Math.min(W,d)); dxLast=d;
+      cur.style.transform="translateX("+d.toFixed(0)+"px)"; cur.style.opacity=(1-Math.min(0.4,Math.abs(d)/W)).toFixed(2);
+    }, {passive:false});
+    document.addEventListener("touchend", function(){
+      if(!drag) return; drag=false;
+      var d=dxLast, i=VIEW_ORDER.indexOf(currentView()), go=Math.abs(d)>W*0.2;
+      if(go && d<0 && !atE){ clr(cur); showView(VIEW_ORDER[i+1],"next"); }
+      else if(go && d>0 && !atS){ clr(cur); showView(VIEW_ORDER[i-1],"prev"); }
+      else { var c=cur; c.style.transition="transform .2s ease, opacity .2s ease"; c.style.transform="translateX(0)"; c.style.opacity="1"; setTimeout(function(){ clr(c); }, 220); }
     }, {passive:true});
   })();
 
@@ -2290,9 +2304,37 @@ window.checkAppUpdate = function(cb){
 
   function render() { renderChips(); renderHome(); renderAssets(); renderPortfolio(); renderChart(); renderHistory(); renderGoals(); }
 
+  // ===== 月末チェック（入力もれ確認）リマインダー =====
+  function monthEndWindow(days){ var d=new Date(); var last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate(); return d.getDate() > last-days; }
+  window.meLater=function(){ try{ localStorage.setItem("monthEndDismiss", currentYM()); }catch(e){} var m=document.getElementById("monthEndModal"); if(m)m.style.display="none"; };
+  window.meGoAssets=function(){ window.meLater(); showView("assets"); };
+  window.meEnableNotify=function(){ if(!("Notification" in window)){ alert("この端末はOS通知に対応していません（iPhoneではホーム画面に追加したPWAでのみ対応）。"); return; } Notification.requestPermission().then(function(p){ var l=document.getElementById("meNotifyLink"); if(p==="granted"){ try{ localStorage.setItem("meNotify","1"); }catch(e){} if(l)l.textContent="OS通知：オン"; try{ new Notification("通知をオンにしました",{body:"月末に資産チェックのお知らせを表示します。"}); }catch(e){} } else if(l){ l.textContent="OS通知は許可されませんでした"; } }); };
+  function checkMonthEndReminder(){
+    try{
+      var ym=currentYM();
+      if(!monthEndWindow(3)) return;                                  // 月末3日間のみ
+      if(localStorage.getItem("monthEndDismiss")===ym) return;        // 今月は「後で」で閉じた
+      var upd=localStorage.getItem("assetUpdatedDate");               // 月末の窓の中で更新済みなら出さない
+      if(upd){ var ud=new Date(upd+"T00:00:00"), now=new Date();
+        if(ud.getFullYear()===now.getFullYear() && ud.getMonth()===now.getMonth()){
+          var last=new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+          if(ud.getDate() > last-3) return;
+        } }
+      var m=document.getElementById("monthEndModal"); if(!m) return;
+      m.style.display="flex";
+      var l=document.getElementById("meNotifyLink");
+      if(l && ("Notification" in window) && Notification.permission==="granted") l.textContent="OS通知：オン";
+      if(("Notification" in window) && Notification.permission==="granted" && localStorage.getItem("meNotify")==="1"){
+        try{ new Notification("月末の資産チェック",{body:"今月の資産額は最新ですか？各口座・投資の残高を更新しておきましょう。"}); }catch(e){}
+      }
+    }catch(e){}
+  }
+  window.checkMonthEndReminder=checkMonthEndReminder;
+
   recordCurrentMonth();        // 起動時に当月を自動記録
   checkAchievements(true);     // 既達成の段階に達成日を静かに付与
   render();
+  setTimeout(checkMonthEndReminder, 900);
 
   // クラウド同期用：localStorageを読み直して主アプリを再起動（CloudSyncから呼ぶ）
   window.__bootMain = function(){
@@ -2305,6 +2347,7 @@ window.checkAppUpdate = function(cb){
       userAge = Number(localStorage.getItem(AKEY) || 0);
     }catch(e){}
     recordCurrentMonth(); checkAchievements(true); render();
+    setTimeout(function(){ if(window.checkMonthEndReminder) window.checkMonthEndReminder(); }, 900);
   };
 </script>
 <script>
