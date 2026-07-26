@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260726134150";
+window.APP_VERSION = "20260726134658";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -2011,8 +2011,8 @@ window.checkAppUpdate = function(cb){
     // 大きい順に濃→淡のグレー階調を割り当て（隣同士がはっきり違う明暗に）
     const grayFor = (i,n)=>{ const t=(n<=1)?0:(i/(n-1)); const v=Math.round((0.13+t*0.66)*255); return `rgb(${v},${v},${v})`; };
     const colorOf = cats.map((s,i)=>grayFor(i,cats.length));
-    const r=70,cx=100,cy=100,C=2*Math.PI*r; let off=0; const gap=5;
-    const segs = cats.map((s,i) => { const full=s.amount/total*C; const draw=Math.max(0.6, full-gap); const g=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${colorOf[i]}" stroke-width="22" stroke-dasharray="${draw} ${C-draw}" stroke-dashoffset="${-off}"/>`; off+=full; return g; }).join("");
+    const r=70,cx=100,cy=100,C=2*Math.PI*r; let off=0;
+    const segs = cats.map((s,i) => { const len=s.amount/total*C; const g=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${colorOf[i]}" stroke-width="22" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}"/>`; off+=len; return g; }).join("");
     const donut = `<svg class="pf-donut" viewBox="0 0 200 200"><g transform="rotate(-90 ${cx} ${cy})">${segs}</g><text x="${cx}" y="${cy-3}" text-anchor="middle" font-size="11" fill="#a1a1aa" letter-spacing="1">TOTAL</text><text x="${cx}" y="${cy+17}" text-anchor="middle" font-size="18" font-weight="600" fill="#18181b">${yenShort(total)}</text></svg>`;
     const legend = cats.map((s,i) => `<div class="pf-row"><span class="pf-dot" style="background:${colorOf[i]}"></span><span class="pf-name">${escapeHtml(s.label)}</span><span class="pf-amt num">${yen(s.amount)}</span><span class="pf-pct num">${(s.amount/total*100).toFixed(1)}%</span></div>`).join("");
     box.innerHTML = `<div class="pf-wrap">${donut}<div class="pf-legend">${legend}</div></div>`;
