@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260726120912";
+window.APP_VERSION = "20260726133108";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -173,6 +173,8 @@ window.checkAppUpdate = function(cb){
   .item { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border:1px solid var(--line-soft); border-radius:11px; margin-bottom:7px; background:#fff; }
   .item.debt { background:var(--down-soft); }
   .item .name { font-size:14px; } .item .right { display:flex; align-items:center; gap:14px; } .item .amt { font-size:14px; font-weight:600; }
+  .item .nm { display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .item .upd { font-size:11px; color:var(--muted); }
   .del { background:none; border:none; color:var(--muted); padding:2px; cursor:pointer; font-size:12px; font-family:inherit; transition:color .12s; } .del:hover { color:var(--down); }
   .empty { text-align:center; color:var(--muted); padding:26px 0; font-size:13px; line-height:1.7; }
 
@@ -1825,12 +1827,13 @@ window.checkAppUpdate = function(cb){
     const amount = parseAmt("amount");
     if (!name) { alert("名称を入力してください"); return; }
     if (!amount || amount < 0) { alert("金額を正しく入力してください"); return; }
+    const today = new Date().toISOString().slice(0,10);
     if (editingId != null) {
       const a = assets.find(x => x.id === editingId);
-      if (a) { a.cat = selectedCat; a.name = name; a.amount = amount; }
+      if (a) { a.cat = selectedCat; a.name = name; a.amount = amount; a.updatedAt = today; }
       editingId = null;
     } else {
-      assets.push({ id: Date.now(), cat: selectedCat, name, amount });
+      assets.push({ id: Date.now(), cat: selectedCat, name, amount, updatedAt: today });
     }
     save(); recordCurrentMonth(); checkAchievements(false);
     document.getElementById("name").value = "";
@@ -2052,6 +2055,14 @@ window.checkAppUpdate = function(cb){
       </div><div class="right"><span class="amt num">${yen(h.total)}</span><button class="del" onclick="delHistory('${h.ym}')">削除</button></div></div>`).join("");
   }
 
+  function fmtUpdated(s){
+    if(!s) return "";
+    var d=new Date(s+"T00:00:00"); if(isNaN(d)) return "";
+    var now=new Date(), t0=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    var days=Math.floor((t0-d)/86400000);
+    if(days<=0) return "今日"; if(days===1) return "昨日"; if(days<7) return days+"日前";
+    return (d.getFullYear()===now.getFullYear()?"":d.getFullYear()+"/")+(d.getMonth()+1)+"/"+d.getDate();
+  }
   function renderAssets() {
     const list = document.getElementById("list");
     if (assets.length === 0) { list.innerHTML = '<div class="empty">まだ資産が登録されていません</div>'; return; }
@@ -2059,7 +2070,7 @@ window.checkAppUpdate = function(cb){
       const items = assets.filter(a => a.cat === c.key);
       if (!items.length) return "";
       const sub = items.reduce((s,a)=>s+a.amount,0);
-      const rows = items.map(a => `<div class="item ${c.group==='debt'?'debt':''}"><span class="name">${escapeHtml(a.name)}</span><div class="right"><span class="amt num">${yen(a.amount)}</span><button class="del" style="color:var(--ink-2)" onclick="editAsset(${a.id})">編集</button><button class="del" onclick="delAsset(${a.id})">削除</button></div></div>`).join("");
+      const rows = items.map(a => `<div class="item ${c.group==='debt'?'debt':''}"><div class="nm"><span class="name">${escapeHtml(a.name)}</span>${a.updatedAt?`<span class="upd">更新 ${fmtUpdated(a.updatedAt)}</span>`:''}</div><div class="right"><span class="amt num">${yen(a.amount)}</span><button class="del" style="color:var(--ink-2)" onclick="editAsset(${a.id})">編集</button><button class="del" onclick="delAsset(${a.id})">削除</button></div></div>`).join("");
       return `<div class="genre-group"><div class="genre-header"><span class="gh-mark" style="background:${c.color}"></span><span class="gh-label">${c.label}</span><span class="gh-count num">${items.length}件</span><span class="gh-sub num">${yen(sub)}</span></div>${rows}</div>`;
     }).join("");
   }
