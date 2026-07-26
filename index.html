@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260724173917";
+window.APP_VERSION = "20260726120912";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -3670,14 +3670,31 @@ window.CloudSync = (function(){
   function dataMap(){ var m={}; SYNC_KEYS.forEach(function(k){ var v=localStorage.getItem(k); if(v!=null) m[k]=v; }); return m; }
   function localSig(){ return SYNC_KEYS.map(function(k){ return localStorage.getItem(k)||""; }).join(""); }
   function cloudSig(d){ return SYNC_KEYS.map(function(k){ return (d&&d[k]!=null)?d[k]:""; }).join(""); }
+  // リスト型キーは id/ym で突き合わせて和集合（手元優先）。まるごと上書きによる相手データ消失を防ぐ。
+  var LIST_KEYS = { "asset_app":"id", "asset_app_milestones":"id", "asset_app_history":"ym", "lifesim_scenarios":"id" };
+  var lastCloud = null; // 直近に受信したクラウドの data マップ
+  function mergeList(aStr, bStr, idKey){
+    var A,B; try{ A=JSON.parse(aStr||"[]"); }catch(e){ A=null; } try{ B=JSON.parse(bStr||"[]"); }catch(e){ B=null; }
+    if(!Array.isArray(A)) return (aStr!=null?aStr:(bStr!=null?bStr:"[]"));
+    if(!Array.isArray(B)) return (aStr!=null?aStr:"[]");
+    var map={}; B.forEach(function(x){ if(x&&x[idKey]!=null) map[String(x[idKey])]=x; });
+    A.forEach(function(x){ if(x&&x[idKey]!=null) map[String(x[idKey])]=x; }); // 手元(A)優先
+    return JSON.stringify(Object.keys(map).sort().map(function(k){ return map[k]; }));
+  }
+  function buildMerged(cloud){ var m={}; SYNC_KEYS.forEach(function(k){ var lv=localStorage.getItem(k), cv=cloud?cloud[k]:null;
+    if(LIST_KEYS[k]!=null) m[k]=mergeList(lv, cv, LIST_KEYS[k]);
+    else if(lv!=null) m[k]=lv; else if(cv!=null) m[k]=cv; }); return m; }
   function schedulePush(){ if(pushTimer)clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,400); }
-  function pushNow(){ if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; } if(!hid)return; db.collection("households").doc(hid).set({ data:dataMap(), updatedAt:firebase.firestore.FieldValue.serverTimestamp(), updatedBy:myUid }, {merge:true}).catch(function(e){ console.warn("push失敗",e); }); }
+  function pushNow(){ if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; } if(!hid)return; db.collection("households").doc(hid).set({ data:buildMerged(lastCloud), updatedAt:firebase.firestore.FieldValue.serverTimestamp(), updatedBy:myUid }, {merge:true}).catch(function(e){ console.warn("push失敗",e); }); }
   // アプリを閉じる・バックグラウンドにした瞬間に、未送信の保存を即確定（データ消失防止）
   function flushPush(){ if(pushTimer){ pushNow(); } }
   document.addEventListener("visibilitychange", function(){ if(document.hidden) flushPush(); });
   window.addEventListener("pagehide", flushPush);
   window.addEventListener("beforeunload", flushPush);
-  function applyRemote(d){ applyingRemote=true; try{ SYNC_KEYS.forEach(function(k){ if(d&&d[k]!=null) _origSet.call(localStorage,k,d[k]); }); }catch(e){} applyingRemote=false; try{ if(window.__bootMain)window.__bootMain(); if(window.__bootLp)window.__bootLp(); }catch(e){ console.warn("boot失敗",e); } }
+  function applyRemote(d){ applyingRemote=true; try{ SYNC_KEYS.forEach(function(k){
+      if(LIST_KEYS[k]!=null){ _origSet.call(localStorage,k, mergeList(localStorage.getItem(k), d?d[k]:null, LIST_KEYS[k])); }  // 相手の追加分を統合（消さない）
+      else if(d&&d[k]!=null){ _origSet.call(localStorage,k,d[k]); }
+    }); }catch(e){} applyingRemote=false; try{ if(window.__bootMain)window.__bootMain(); if(window.__bootLp)window.__bootLp(); }catch(e){ console.warn("boot失敗",e); } }
   function bootApp(){ hide("authOverlay"); injectAcctBtn(); }
   function showSection(w){ hide("secLogin"); hide("secHousehold"); hide("secLoading"); show("sec"+w); show("authOverlay"); }
   function toggleMode(){ mode=(mode==="login")?"signup":"login"; el("loginTitle").textContent=mode==="login"?"ログイン":"新規登録"; el("authSubmit").textContent=mode==="login"?"ログイン":"アカウント作成"; el("authToggle").textContent=mode==="login"?"アカウントを新規作成":"ログインに戻る"; el("authPass").setAttribute("autocomplete",mode==="login"?"current-password":"new-password"); msg(""); }
@@ -3701,7 +3718,7 @@ window.CloudSync = (function(){
     unsub=db.collection("households").doc(hid).onSnapshot(function(doc){
       if(!doc.exists)return;
       var d=doc.data(); if(d.inviteCode)inviteCode=d.inviteCode;
-      var data=d.data||{};
+      var data=d.data||{}; lastCloud=data;
       var cloudVer=(d.updatedAt&&d.updatedAt.toMillis)?d.updatedAt.toMillis():0;
       var lastVer=Number(localStorage.getItem("_cloudVer")||0);
       if(cloudSig(data)===localSig()){
