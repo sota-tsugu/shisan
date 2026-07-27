@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260727134534";
+window.APP_VERSION = "20260727141510";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -275,8 +275,8 @@ window.checkAppUpdate = function(cb){
   @media (max-width:360px){ .lp-row { flex-direction:column; gap:0; } }
   @media (min-width:700px){ .topbar-inner, main { max-width:660px; } }
   /* 比較テーブルの狭幅対応：金額は改行させず、ラベル列は折り返し可、狭い画面では文字と余白を圧縮 */
-  .lp-cmp td:not(:first-child), .lp-cmp th:not(:first-child) { white-space:nowrap; }
-  .lp-cmp td:first-child, .lp-cmp th:first-child { white-space:normal; word-break:break-word; }
+  .lp-cmp td, .lp-cmp th { white-space:nowrap; }
+  .lp-cmp-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   @media (max-width:400px){ .lp-cmp { font-size:11.5px; } .lp-cmp th, .lp-cmp td { padding:8px 4px; } }
   @media (max-width:400px){ .nav button { font-size:11px; padding:10px 2px 11px; letter-spacing:-0.03em; } .nav button .ic { width:18px; height:18px; } .lp-stepper .s { font-size:10px; } }
   @media (max-width:360px){ .nav { gap:2px; } .nav button { font-size:10px; letter-spacing:-0.04em; } }
@@ -3270,6 +3270,7 @@ window.checkAppUpdate = function(cb){
       if(longevityAge!=null){ var si=-1; for(var qi=0;qi<rows.length;qi++){ if(rows[qi].ageSelf===longevityAge){si=qi;break;} } if(si>=0) lines+=anno(si, y0, "資金ショート"+longevityAge+"歳", "#dc2626"); }
     }
     var xl=""; rows.forEach(function(r,i){ if(r.year%5===0){ xl+='<text x="'+xAt(i).toFixed(1)+'" y="'+(bottom+16)+'" text-anchor="middle" font-size="9" fill="#a1a1aa">'+r.year+'</text><text x="'+xAt(i).toFixed(1)+'" y="'+(bottom+28)+'" text-anchor="middle" font-size="9" fill="#c4c4c8">'+r.ageSelf+'</text>'; } });
+    var li=rows.length-1; if(li>=0 && rows[li].year%5!==0){ xl+='<text x="'+xAt(li).toFixed(1)+'" y="'+(bottom+16)+'" text-anchor="end" font-size="9" fill="#a1a1aa">'+rows[li].year+'</text><text x="'+xAt(li).toFixed(1)+'" y="'+(bottom+28)+'" text-anchor="end" font-size="9" fill="#c4c4c8">'+rows[li].ageSelf+'歳</text>'; }
     var cursor='<line id="lpDetCursor" x1="0" y1="'+pT+'" x2="0" y2="'+bottom+'" stroke="#18181b" stroke-width="1" opacity="0"/>';
     var hits=""; rows.forEach(function(r,i){ hits+='<rect x="'+(xAt(i)-col/2).toFixed(1)+'" y="'+pT+'" width="'+col+'" height="'+(bottom-pT)+'" fill="transparent" onmousemove="lpDetTip(event,'+i+')" onclick="lpDetTip(event,'+i+')"/>'; });
     window.lpDetData=rows.map(function(r,i){ return {year:r.year,age:r.ageSelf,self:r.netSalarySelf||0,spouse:r.netSalarySpouse||0,pension:r.pension||0,invest:r.investReturn||0,incOth:Math.max(0,(r.totalIncome||0)-(r.netSalary||0)-(r.pension||0)),living:r.living||0,housing:r.housing||0,edu:r.education||0,big:r.bigExpense||0,expOth:Math.max(0,(r.totalExpense||0)-(r.living||0)-(r.housing||0)-(r.education||0)-(r.bigExpense||0)),incTotal:r.totalIncome||0,expTotal:r.totalExpense||0,balance:r.balance||0,netcf:r.netCashflow||0,xpx:xAt(i)}; });
@@ -3285,6 +3286,13 @@ window.checkAppUpdate = function(cb){
     Object.keys(evMap).forEach(function(yy){ var idx=-1; for(var k=0;k<rows.length;k++){ if(rows[k].year==yy){idx=k;break;} } if(idx<0)return; var x=xAt(idx);
       evBand+='<line x1="'+x.toFixed(1)+'" y1="30" x2="'+x.toFixed(1)+'" y2="'+bottom+'" stroke="#eeeef0"/>';
       evBand+='<text x="'+x.toFixed(1)+'" y="20" text-anchor="middle" font-size="13">'+evMap[yy].slice(0,2).join("")+'</text>'; });
+    // 死亡マーカー（本人・配偶者）：計算がどこまで続くかを明示
+    var deathSelfY=selfBY+((lp.simSettings&&lp.simSettings.deathAgeSelf)||100);
+    function idxOfYear(y){ for(var k=0;k<rows.length;k++){ if(rows[k].year===y) return k; } return -1; }
+    function deathMark(idx,label){ if(idx<0)return""; var x=xAt(idx); return '<line x1="'+x.toFixed(1)+'" y1="30" x2="'+x.toFixed(1)+'" y2="'+bottom+'" stroke="#dc2626" stroke-width="1" stroke-dasharray="4 3" opacity="0.55"/><text x="'+x.toFixed(1)+'" y="29" text-anchor="middle" font-size="9" fill="#dc2626">'+label+'</text>'; }
+    var iSelfDeath=idxOfYear(deathSelfY);
+    if(iSelfDeath>=0 && iSelfDeath<rows.length-1) evBand+=deathMark(iSelfDeath,"本人死亡");
+    if(lp.profile.spouse&&lp.profile.spouse.exists) evBand+=deathMark(rows.length-1,"配偶者死亡");
     var svg='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" style="display:block">'+evBand+grid+areaFill+expZone+bars+lines+xl+cursor+hits+'</svg>';
     // サマリー指標
     var minBal=Math.min.apply(null, rows.map(function(r){return r.balance;}));
@@ -3453,7 +3461,7 @@ window.checkAppUpdate = function(cb){
     var pen=window.LifeSim.comparePensionStart(inp, null, {inflationRate:viewOpts.inflationRate});
     var penSeries=pen.patterns.map(function(p,i){ return {label:p.startAge+"歳",color:LP_PAL[i%LP_PAL.length],values:p.rows.map(function(r){return r.balance;})}; });
     var penAges=pen.patterns[0].rows.map(function(r){return r.ageSelf;});
-    var penTable='<table class="lp-cmp" style="margin-top:8px"><thead><tr><th>開始</th><th>年金/年（世帯）</th><th>資産寿命</th><th>最終資産</th></tr></thead><tbody>'+pen.patterns.map(function(p){return '<tr><td>'+p.startAge+'歳</td><td>'+yenLabel(p.annualPension)+'</td><td>'+fmtAge(p.longevityAge)+'</td><td>'+yenLabel(p.finalBalance)+'</td></tr>';}).join("")+'</tbody></table>';
+    var penTable='<div class="lp-cmp-wrap"><table class="lp-cmp" style="margin-top:8px"><thead><tr><th>開始</th><th>年金/年（世帯）</th><th>資産寿命</th><th>最終資産</th></tr></thead><tbody>'+pen.patterns.map(function(p){return '<tr><td>'+p.startAge+'歳</td><td>'+yenLabel(p.annualPension)+'</td><td>'+fmtAge(p.longevityAge)+'</td><td>'+yenLabel(p.finalBalance)+'</td></tr>';}).join("")+'</tbody></table></div>';
     var penHtml='<div class="card"><div class="section-title">年金受給開始年齢 比較</div>'+lpChart(penAges,penSeries)+lpLegend(penSeries)+penTable+'</div>';
 
     // 相続シミュレーション（詳細ケース）の結果カード
@@ -3522,7 +3530,7 @@ window.checkAppUpdate = function(cb){
       retRows+='<tr><td>'+sc.k+'（'+sc.r+'%）</td><td class="num">'+yenLabel(gain)+'</td><td>'+fmtAge(rr.summary.longevityAge)+'</td><td class="num">'+yenLabel(rr.summary.finalBalance)+'</td></tr>';
     });
     var returnHtml='<div class="card"><div class="section-title">運用利回りシナリオ比較（悲観・標準・楽観）</div>'+lpChart(ages,retSeries)+lpLegend(retSeries)
-      +'<table class="lp-cmp" style="margin-top:8px"><thead><tr><th>ケース</th><th>生涯運用益</th><th>資産寿命</th><th>最終資産</th></tr></thead><tbody>'+retRows+'</tbody></table>'
+      +'<div class="lp-cmp-wrap"><table class="lp-cmp" style="margin-top:8px"><thead><tr><th>ケース</th><th>生涯運用益</th><th>資産寿命</th><th>最終資産</th></tr></thead><tbody>'+retRows+'</tbody></table></div>'
       +'<div class="lp-note">運用益は「毎年一定の利回りがかかる」前提の単純計算です。実際には相場変動があり下落する年もあり、特に取り崩し期の下落は影響が大きい（シーケンスリスク）ほか、課税（NISA枠外）や手数料も未考慮です。標準は目安、楽観は上振れの上限イメージ、悲観ケースも必ず併せてご確認ください。</div></div>';
 
     // ===== 4%ルール（トリニティ式）取り崩しシミュレーション =====
