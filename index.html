@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260726134658";
+window.APP_VERSION = "20260727134534";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -2812,7 +2812,7 @@ window.checkAppUpdate = function(cb){
     return '<div class="card"><div class="section-title">現在の資産と運用の前提</div>'
       + '<button class="btn btn-outline" onclick="lpImportAssets()" style="margin-bottom:6px">資産タブから取り込む</button>'
       + '<div class="lp-note" style="margin:0 0 12px">資産タブに登録した保有額から、下の内訳とアセット別の利回り比率をまとめて取り込みます（不動産は資産タブの「不動産」カテゴリから、負債は対象外）。未登録なら下の欄に直接入力してください。</div>'
-      + '<div class="lp-row"><div>'+field("現金・預金", amtI("finance.assetBreakdown.cash"))+'</div><div>'+field("株式・投信", amtI("finance.assetBreakdown.securities"))+'</div></div>'
+      + '<div class="lp-row"><div>'+field("現金・預金", amtI("finance.assetBreakdown.cash"))+'</div><div>'+field("株式・投信・コモディティ等", amtI("finance.assetBreakdown.securities"))+'</div></div>'
       + '<div class="lp-row"><div>'+field("不動産", amtI("finance.assetBreakdown.realEstate"))+'</div><div>'+field("その他", amtI("finance.assetBreakdown.other"))+'</div></div>'
       + divider
       + '<div class="lp-row"><div>'+field("現役期の想定利回り（％/年）", '<input type="number" inputmode="decimal" step="0.1" id="rateAcc" value="'+(lp.finance.expectedReturnRate||0)+'" onchange="lpNum(\'finance.expectedReturnRate\',this.value)">')+'</div><div>'+field("退職後の想定利回り（％/年）", numI("finance.retirementReturnRate"))+'</div></div>'
