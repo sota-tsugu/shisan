@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260727141510";
+window.APP_VERSION = "20260912101234";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -1832,10 +1832,10 @@ window.checkAppUpdate = function(cb){
     const today = new Date().toISOString().slice(0,10);
     if (editingId != null) {
       const a = assets.find(x => x.id === editingId);
-      if (a) { a.cat = selectedCat; a.name = name; a.amount = amount; a.updatedAt = today; }
+      if (a) { a.cat = selectedCat; a.name = name; a.amount = amount; a.updatedAt = today; a.mtime = Date.now(); }
       editingId = null;
     } else {
-      assets.push({ id: Date.now(), cat: selectedCat, name, amount, updatedAt: today });
+      assets.push({ id: Date.now(), cat: selectedCat, name, amount, updatedAt: today, mtime: Date.now() });
     }
     save(); recordCurrentMonth(); checkAchievements(false);
     document.getElementById("name").value = "";
@@ -3702,7 +3702,12 @@ window.CloudSync = (function(){
     if(!Array.isArray(A)) return (aStr!=null?aStr:(bStr!=null?bStr:"[]"));
     if(!Array.isArray(B)) return (aStr!=null?aStr:"[]");
     var map={}; B.forEach(function(x){ if(x&&x[idKey]!=null) map[String(x[idKey])]=x; });
-    A.forEach(function(x){ if(x&&x[idKey]!=null) map[String(x[idKey])]=x; }); // 手元(A)優先
+    A.forEach(function(x){ if(!(x&&x[idKey]!=null))return; var k=String(x[idKey]), ex=map[k];
+      if(!ex){ map[k]=x; return; }
+      var xm=+x.mtime||0, em=+ex.mtime||0;
+      if(xm||em) map[k]=(xm>=em)?x:ex;   // 更新時刻があれば「新しく編集した方」を採用
+      else map[k]=x;                      // どちらも時刻なし→手元優先（従来）
+    });
     return JSON.stringify(Object.keys(map).sort().map(function(k){ return map[k]; }));
   }
   function buildMerged(cloud){ var m={}; SYNC_KEYS.forEach(function(k){ var lv=localStorage.getItem(k), cv=cloud?cloud[k]:null;
