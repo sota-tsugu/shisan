@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260912101234";
+window.APP_VERSION = "20260912104709";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -3671,7 +3671,11 @@ window.checkAppUpdate = function(cb){
     <div class="lp-note">このコードを配偶者に伝え、相手のログイン後に「招待コードで参加」で入力してもらうと、同じデータを共有できます。</div>
     <button class="btn btn-outline" style="margin-top:4px" onclick="CloudSync.checkUpdate(this)">更新を確認</button>
     <div class="lp-note" id="acctVer" style="text-align:center;margin-top:4px"></div>
-    <button class="btn btn-outline" onclick="CloudSync.logout()">ログアウト</button>
+    <details style="margin-top:10px"><summary style="font-size:12px;color:var(--muted);cursor:pointer">同期の状態（デバッグ）</summary>
+      <pre id="acctDiag" style="font-size:11px;white-space:pre-wrap;background:var(--fill-soft);border-radius:8px;padding:8px;margin:6px 0;line-height:1.6"></pre>
+      <div style="display:flex;gap:6px"><button class="btn btn-outline" style="padding:8px" onclick="CloudSync.forcePush(this)">今すぐ送信</button><button class="btn btn-outline" style="padding:8px" onclick="CloudSync.forcePull(this)">今すぐ取得</button></div>
+    </details>
+    <button class="btn btn-outline" style="margin-top:8px" onclick="CloudSync.logout()">ログアウト</button>
     <button class="btn btn-outline" style="margin-top:8px" onclick="CloudSync.closeAcct()">閉じる</button>
   </div>
 </div>
@@ -3713,8 +3717,25 @@ window.CloudSync = (function(){
   function buildMerged(cloud){ var m={}; SYNC_KEYS.forEach(function(k){ var lv=localStorage.getItem(k), cv=cloud?cloud[k]:null;
     if(LIST_KEYS[k]!=null) m[k]=mergeList(lv, cv, LIST_KEYS[k]);
     else if(lv!=null) m[k]=lv; else if(cv!=null) m[k]=cv; }); return m; }
+  var lastPush="—", lastPull="—", lastErr="", lastUpdatedBy="";
+  function cnt(str){ try{ var a=JSON.parse(str||"[]"); return Array.isArray(a)?a.length:"?"; }catch(e){ return "?"; } }
+  function diagText(){
+    var localN=cnt(localStorage.getItem("asset_app"));
+    var cloudN=lastCloud?cnt(lastCloud["asset_app"]):"—";
+    return "世帯ID: "+(hid?("…"+hid.slice(-6)):"なし")
+      +"\n自分: …"+((myUid||"").slice(-4))
+      +"\nクラウド最終更新者: "+(lastUpdatedBy?("…"+lastUpdatedBy.slice(-4)):"—")
+      +"\n資産件数  手元:"+localN+" / クラウド:"+cloudN
+      +"\n最後の受信: "+lastPull
+      +"\n最後の送信: "+lastPush
+      +"\nエラー: "+(lastErr||"なし");
+  }
+  window.CloudSync_diag=diagText;
   function schedulePush(){ if(pushTimer)clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,400); }
-  function pushNow(){ if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; } if(!hid)return; db.collection("households").doc(hid).set({ data:buildMerged(lastCloud), updatedAt:firebase.firestore.FieldValue.serverTimestamp(), updatedBy:myUid }, {merge:true}).catch(function(e){ console.warn("push失敗",e); }); }
+  function pushNow(){ if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; } if(!hid)return;
+    db.collection("households").doc(hid).set({ data:buildMerged(lastCloud), updatedAt:firebase.firestore.FieldValue.serverTimestamp(), updatedBy:myUid }, {merge:true})
+      .then(function(){ lastPush=new Date().toLocaleTimeString("ja-JP")+" 成功"; })
+      .catch(function(e){ lastPush=new Date().toLocaleTimeString("ja-JP")+" 失敗"; lastErr=(e&&(e.code||e.message))||"error"; console.warn("push失敗",e); }); }
   // アプリを閉じる・バックグラウンドにした瞬間に、未送信の保存を即確定（データ消失防止）
   function flushPush(){ if(pushTimer){ pushNow(); } }
   document.addEventListener("visibilitychange", function(){ if(document.hidden) flushPush(); });
@@ -3744,10 +3765,11 @@ window.CloudSync = (function(){
         .then(function(){ hid=h; startHousehold(); }); })
       .catch(function(e){ msg(authErr(e)); showSection("Household"); }); }
   function startHousehold(){ showSection("Loading"); if(unsub){unsub();}
-    unsub=db.collection("households").doc(hid).onSnapshot(function(doc){
+    unsub=db.collection("households").doc(hid).onSnapshot({includeMetadataChanges:true}, function(doc){
       if(!doc.exists)return;
       var d=doc.data(); if(d.inviteCode)inviteCode=d.inviteCode;
       var data=d.data||{}; lastCloud=data;
+      lastPull=new Date().toLocaleTimeString("ja-JP")+(doc.metadata.fromCache?"（キャッシュ）":"（サーバー）"); lastUpdatedBy=d.updatedBy||"";
       var cloudVer=(d.updatedAt&&d.updatedAt.toMillis)?d.updatedAt.toMillis():0;
       var lastVer=Number(localStorage.getItem("_cloudVer")||0);
       if(cloudSig(data)===localSig()){
@@ -3763,15 +3785,17 @@ window.CloudSync = (function(){
         schedulePush();  // 手元の未送信データをクラウドへ（上書き消去しない）
         bootApp();
       }
-    }, function(e){ console.warn("snapshot失敗",e); msg("同期エラー："+(e.message||"")); }); }
+    }, function(e){ lastErr=(e&&(e.code||e.message))||"snapshot error"; console.warn("snapshot失敗",e); msg("同期エラー："+(e.message||"")); }); }
   function genCode(){ var s="ABCDEFGHJKLMNPQRSTUVWXYZ23456789", r=""; for(var i=0;i<6;i++)r+=s[Math.floor(Math.random()*s.length)]; return r; }
   function injectAcctBtn(){ if(el("acctBtn"))return; var bar=document.querySelector(".topbar-inner"); if(!bar)return; bar.style.position="relative"; var b=document.createElement("button"); b.id="acctBtn"; b.type="button"; b.textContent="👤"; b.style.cssText="position:absolute;top:14px;right:16px;width:auto;border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 10px;font-size:15px;line-height:1;cursor:pointer;margin:0"; b.onclick=openAcct; bar.appendChild(b); }
-  function openAcct(){ var u=auth.currentUser; el("acctEmail").textContent=u?u.email:""; el("acctCode").textContent=inviteCode||"（世帯を作成した端末で確認）"; var v=el("acctVer"); if(v)v.textContent="バージョン: "+(window.APP_VERSION||"?"); show("acctPanel","flex"); }
+  function openAcct(){ var u=auth.currentUser; el("acctEmail").textContent=u?u.email:""; el("acctCode").textContent=inviteCode||"（世帯を作成した端末で確認）"; var v=el("acctVer"); if(v)v.textContent="バージョン: "+(window.APP_VERSION||"?"); var dg=el("acctDiag"); if(dg)dg.textContent=diagText(); show("acctPanel","flex"); }
   function closeAcct(){ hide("acctPanel"); }
+  function forcePush(btn){ if(btn)btn.textContent="送信中…"; pushNow(); setTimeout(function(){ var dg=el("acctDiag"); if(dg)dg.textContent=diagText(); if(btn)btn.textContent="今すぐ送信"; },1500); }
+  function forcePull(btn){ if(btn)btn.textContent="取得中…"; if(!hid){ if(btn)btn.textContent="今すぐ取得"; return; } db.collection("households").doc(hid).get({source:"server"}).then(function(doc){ if(doc.exists){ var d=doc.data(); var data=d.data||{}; lastCloud=data; lastUpdatedBy=d.updatedBy||""; lastPull=new Date().toLocaleTimeString("ja-JP")+"（手動取得）"; applyRemote(data); var cv=(d.updatedAt&&d.updatedAt.toMillis)?d.updatedAt.toMillis():0; if(cv)_origSet.call(localStorage,"_cloudVer",String(cv)); } var dg=el("acctDiag"); if(dg)dg.textContent=diagText(); if(btn)btn.textContent="今すぐ取得"; }).catch(function(e){ lastErr=(e&&(e.code||e.message))||"get error"; var dg=el("acctDiag"); if(dg)dg.textContent=diagText(); if(btn)btn.textContent="今すぐ取得"; }); }
   function checkUpdate(btn){ if(!window.checkAppUpdate){ return; } if(btn)btn.textContent="確認中…"; var v=el("acctVer"); window.checkAppUpdate(function(res){ if(res==="update"){ if(btn)btn.textContent="新しい版に更新します…"; if(v)v.textContent="新しい版が見つかりました。更新します…"; } else if(res==="latest"){ if(btn)btn.textContent="最新版です ✓"; if(v)v.textContent="サーバーは最新版です。ファイルをアップロードした直後は、GitHubの反映に1〜2分かかることがあります。少し待ってから、もう一度この「更新を確認」を押してください。（バージョン "+(window.APP_VERSION||"")+"）"; setTimeout(function(){ if(btn)btn.textContent="更新を確認"; },4000); } else { if(btn)btn.textContent="更新を確認"; if(v)v.textContent="更新の確認に失敗しました。通信環境をご確認ください。"; } }); }
   showSection("Loading");
   auth.onAuthStateChanged(function(user){ if(unsub){unsub();unsub=null;} if(!user){ myUid=null; hid=null; mode="login"; showSection("Login"); return; } myUid=user.uid; resolveHousehold(user); });
-  return { submitAuth:submitAuth, toggleMode:toggleMode, logout:logout, createHousehold:createHousehold, joinHousehold:joinHousehold, openAcct:openAcct, closeAcct:closeAcct, checkUpdate:checkUpdate };
+  return { submitAuth:submitAuth, toggleMode:toggleMode, logout:logout, createHousehold:createHousehold, joinHousehold:joinHousehold, openAcct:openAcct, closeAcct:closeAcct, checkUpdate:checkUpdate, forcePush:forcePush, forcePull:forcePull };
 })();
 </script>
 </body>
