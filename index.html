@@ -20,7 +20,7 @@
 <script>if("serviceWorker" in navigator){ window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }</script>
 <!-- アプリのバージョン（ビルド時に置換）と手動更新チェック -->
 <script>
-window.APP_VERSION = "20260912105247";
+window.APP_VERSION = "20260912110130";
 window.checkAppUpdate = function(cb){
   fetch("index.html?_cb=" + Date.now(), { cache: "no-store" }).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -3778,15 +3778,12 @@ window.CloudSync = (function(){
         if(cloudVer) _origSet.call(localStorage,"_cloudVer",String(cloudVer));
         bootApp(); return;
       }
-      // 差分あり：クラウドが「前回同期したより新しい」＝相手の更新→取り込む。そうでなければ手元が新しい→消さずに送る。
-      if(cloudVer>lastVer){
-        applyRemote(data);
-        if(cloudVer) _origSet.call(localStorage,"_cloudVer",String(cloudVer));
-        bootApp();
-      } else {
-        schedulePush();  // 手元の未送信データをクラウドへ（上書き消去しない）
-        bootApp();
-      }
+      // 差分あり：マージは非破壊（更新時刻で新しい方を採用・相手の追加も保持）なので常に取り込む。
+      // ※旧版は版番号ガードで「自分が送信後は相手の更新を取り込まない」不具合があったため撤廃。
+      applyRemote(data);                                 // クラウド→手元へマージ（相手の編集を反映）
+      if(cloudVer) _origSet.call(localStorage,"_cloudVer",String(cloudVer));
+      schedulePush();                                    // 手元だけにある分をクラウドへ（非破壊）
+      bootApp();
     }, function(e){ lastErr=(e&&(e.code||e.message))||"snapshot error"; console.warn("snapshot失敗",e); msg("同期エラー："+(e.message||"")); }); }
   function genCode(){ var s="ABCDEFGHJKLMNPQRSTUVWXYZ23456789", r=""; for(var i=0;i<6;i++)r+=s[Math.floor(Math.random()*s.length)]; return r; }
   function injectAcctBtn(){ if(el("acctBtn"))return; var bar=document.querySelector(".topbar-inner"); if(!bar)return; bar.style.position="relative"; var b=document.createElement("button"); b.id="acctBtn"; b.type="button"; b.textContent="👤"; b.style.cssText="position:absolute;top:14px;right:16px;width:auto;border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 10px;font-size:15px;line-height:1;cursor:pointer;margin:0"; b.onclick=openAcct; bar.appendChild(b); }
